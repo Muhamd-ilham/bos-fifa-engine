@@ -323,7 +323,8 @@ app.post('/api/schedule/generate/:leagueId', async (req, res) => {
     }
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
-    console.log(`Server Bos FIFA berjalan di http://localhost:${PORT}`);
+// 🔥 MENGGUNAKAN PORT OTOMATIS DARI CLOUD & BINDING KE '0.0.0.0'
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🔥 Server Bos FIFA ENGINE sudah LIVE di port ${PORT}`);
 });

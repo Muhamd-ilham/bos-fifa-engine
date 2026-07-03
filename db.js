@@ -1,8 +1,12 @@
 const { Pool } = require('pg');
 
-// Konfigurasi koneksi ke database lokal
 const pool = new Pool({
     connectionString: 'postgresql://neondb_owner:npg_T74cdWsOunVR@ep-floral-leaf-atar110d.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require'
+});
+
+// 🔥 TAMBAHAN BARU: Penangkal Error saat Neon "Tidur"
+pool.on('error', (err) => {
+    console.error('Koneksi database terputus atau Neon sedang tidur:', err.message);
 });
 
 pool.connect()
@@ -10,4 +14,3 @@ pool.connect()
     .catch(err => console.error('Gagal koneksi ke database:', err.stack));
 
 module.exports = pool;
-
