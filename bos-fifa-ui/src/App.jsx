@@ -106,6 +106,10 @@ function computePositionDeltas(prevOrderIds, currentStandings) {
  */
 function computeRecentForm(allMatches) {
   const finished = allMatches
+    console.log('total FINISHED matches:', finished.length);
+console.log('sample finished match:', finished[0]);
+console.log('baseStandings sample club_id:', baseStandings[0]?.club_id, typeof baseStandings[0]?.club_id);
+console.log('sample match home_team_id:', finished[0]?.home_team_id, typeof finished[0]?.home_team_id);
     .filter((m) => m.status === 'FINISHED')
     .slice()
     .sort((a, b) => Number(a.matchday) - Number(b.matchday));
