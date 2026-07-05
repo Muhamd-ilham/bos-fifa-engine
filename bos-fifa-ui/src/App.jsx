@@ -123,8 +123,12 @@ function computeRecentForm(allMatches) {
   };
 
   finished.forEach((m) => {
-    const homeId = m.home_club_id ?? m.homeTeamId ?? m.home_team_id;
-    const awayId = m.away_club_id ?? m.awayTeamId ?? m.away_team_id;
+    // Nama field asli di tabel `matches` (dicek lewat information_schema.columns):
+    // home_team_id / away_team_id, keduanya foreign key ke clubs.id — sama dengan
+    // club_id yang dikembalikan endpoint /api/standings/:leagueId. Tidak perlu lagi
+    // fallback ke nama lain karena skema ini hanya punya satu ID klub yang valid.
+    const homeId = m.home_team_id;
+    const awayId = m.away_team_id;
     const homeScore = Number(m.home_score);
     const awayScore = Number(m.away_score);
 
