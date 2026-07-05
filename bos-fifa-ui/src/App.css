@@ -356,3 +356,90 @@ td { padding: 12px 10px; border-bottom: 1px solid var(--bg-soft); white-space: n
 
   .menu-text { font-size: 9.5px; }
 }
+
+/* =========================================================
+   TAMBAHAN: Panah rank (SVG) + Kolom Form (History 5 match)
+   Tempel blok ini ke bagian bawah App.css yang sudah ada.
+   ========================================================= */
+
+/* Panah rank SVG kini permanen (tidak bergantung status live),
+   jadi cukup styling posisi/hover-nya saja — warnanya sudah
+   di-set langsung di fill SVG masing-masing (IconRankArrow). */
+.rank-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+/* Header kolom Form: sengaja center + sedikit padding ekstra
+   karena isinya deretan badge kecil, bukan angka tunggal. */
+.form-col-header {
+  text-align: center;
+  min-width: 128px;
+}
+
+.form-col {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+/* Badge W/D/L: bulat kecil warna-blok, urutan render dari
+   computeRecentForm() sudah lama -> baru (kiri ke kanan),
+   sama seperti konvensi klasemen Google/Premier League. */
+.form-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0B1712;
+  line-height: 1;
+  cursor: default;
+}
+
+.form-win {
+  background: #34D399; /* hijau = menang */
+}
+
+.form-loss {
+  background: #F87171; /* merah = kalah */
+  color: #1a0b0b;
+}
+
+.form-draw {
+  background: #9CB0A4; /* abu = seri */
+  color: #11211A;
+}
+
+.form-empty {
+  color: #9CB0A4;
+  font-size: 12px;
+}
+
+/* Ikon-ikon SVG inline (trophy, calendar, dsb) dipakai di dalam
+   .g-name dan .menu-btn — samakan alignment vertikalnya dengan
+   teks di sebelahnya supaya rapi menggantikan emoji sebelumnya. */
+.g-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-generate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
