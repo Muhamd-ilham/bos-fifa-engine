@@ -505,7 +505,7 @@ app.get('/api/matches/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
         const query = `
-            SELECT m.id, h.name AS home_team, a.name AS away_team, 
+            SELECT m.id, m.home_team_id, m.away_team_id, h.name AS home_team, a.name AS away_team, 
                    m.home_score, m.away_score, m.status, m.matchday 
             FROM matches m
             JOIN clubs h ON m.home_team_id = h.id
@@ -513,12 +513,10 @@ app.get('/api/matches/:leagueId', async (req, res) => {
             WHERE h.league_id = $1
             ORDER BY m.matchday ASC, m.id ASC
         `;
-        // Catatan: LIMIT 50 dihapus agar semua 380 pertandingan (38 Pekan) muncul
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
     } catch (err) { res.status(500).send('Server Error'); }
 });
-
 // 2. Endpoint: Mesin Pembuat Jadwal Home-Away Sempurna
 app.post('/api/schedule/generate/:leagueId', async (req, res) => {
     try {
