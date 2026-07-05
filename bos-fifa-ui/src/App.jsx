@@ -87,6 +87,184 @@ function computePositionDeltas(prevOrderIds, currentStandings) {
   return deltas;
 }
 
+/**
+ * Hitung "Form" 5 pertandingan terakhir per klub, ala klasemen Google/Premier League
+ * di sisi kanan (W/D/L, terurut lama -> baru dari kiri ke kanan).
+ *
+ * Sumber datanya SENGAJA hanya `matches` dengan status === 'FINISHED', bukan liveMatches.
+ * Sama seperti topScorers/topAssists/cardStats: sebuah match baru "resmi" masuk histori
+ * form setelah benar-benar selesai (FULL_TIME), bukan skor sementara yang masih bisa
+ * berubah selagi live. Ini juga yang membuat form konsisten dengan baseStandings —
+ * begitu sebuah match finish, fetchData() akan menarik ulang matches dan form otomatis
+ * ikut update tanpa logic tambahan.
+ *
+ * matchday dipakai sebagai proxy urutan waktu (lebih besar = lebih baru), sesuai dengan
+ * cara currentMatchday/maxMatchday sudah dipakai di tempat lain pada file ini.
+ *
+ * Return: Map<club_id, Array<{ matchId, result: 'W'|'D'|'L', opponent, scoreLine }>>
+ * diurutkan lama -> baru, maksimum 5 entri terakhir per klub.
+ */
+function computeRecentForm(allMatches) {
+  const finished = allMatches
+    .filter((m) => m.status === 'FINISHED')
+    .slice()
+    .sort((a, b) => Number(a.matchday) - Number(b.matchday));
+
+  const formByClub = new Map();
+
+  const pushEntry = (clubId, entry) => {
+    if (clubId == null) return;
+    if (!formByClub.has(clubId)) formByClub.set(clubId, []);
+    const arr = formByClub.get(clubId);
+    arr.push(entry);
+    // Jaga hanya 5 terakhir per klub SELAMA proses (bukan hanya di akhir), supaya
+    // liga dengan riwayat sangat panjang tidak menumpuk array yang tidak perlu di memori.
+    if (arr.length > 5) arr.shift();
+  };
+
+  finished.forEach((m) => {
+    const homeId = m.home_club_id ?? m.homeTeamId ?? m.home_team_id;
+    const awayId = m.away_club_id ?? m.awayTeamId ?? m.away_team_id;
+    const homeScore = Number(m.home_score);
+    const awayScore = Number(m.away_score);
+
+    const homePts = pointsFor(homeScore, awayScore);
+    const awayPts = pointsFor(awayScore, homeScore);
+
+    const homeResult = homePts === 3 ? 'W' : homePts === 1 ? 'D' : 'L';
+    const awayResult = awayPts === 3 ? 'W' : awayPts === 1 ? 'D' : 'L';
+
+    pushEntry(homeId, {
+      matchId: m.id,
+      result: homeResult,
+      opponent: m.away_team,
+      scoreLine: `${homeScore}-${awayScore}`,
+    });
+    pushEntry(awayId, {
+      matchId: m.id,
+      result: awayResult,
+      opponent: m.home_team,
+      scoreLine: `${awayScore}-${homeScore}`,
+    });
+  });
+
+  return formByClub;
+}
+
+// === SVG ICONS (pengganti emoji) ===
+// Semua ikon dibuat inline sebagai komponen kecil, pakai currentColor / fill eksplisit
+// supaya warnanya konsisten dengan palet yang sudah ada di App.css (emas #E5C26A,
+// hijau #34D399, merah #F87171, abu #9CB0A4) tanpa perlu font emoji dari OS.
+
+const IconTrophy = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M7 4h10v4a5 5 0 01-5 5 5 5 0 01-5-5V4z" fill="#E5C26A" />
+    <path d="M7 5H4a3 3 0 003 3" stroke="#E5C26A" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M17 5h3a3 3 0 01-3 3" stroke="#E5C26A" strokeWidth="1.5" strokeLinecap="round" />
+    <rect x="10.5" y="13" width="3" height="3" fill="#E5C26A" />
+    <path d="M8 20h8" stroke="#E5C26A" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M9 20v-2.5a3 3 0 016 0V20" stroke="#E5C26A" strokeWidth="1.5" fill="none" />
+  </svg>
+);
+
+const IconCalendar = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3.5" y="5" width="17" height="16" rx="2" stroke="#E5C26A" strokeWidth="1.6" />
+    <path d="M3.5 9.5h17" stroke="#E5C26A" strokeWidth="1.6" />
+    <path d="M8 3v4M16 3v4" stroke="#E5C26A" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+
+const IconRefresh = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    <path d="M18 3v4h-4M6 21v-4h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const IconPlayers = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <circle cx="17" cy="7.5" r="2.2" stroke="currentColor" strokeWidth="1.4" opacity="0.7" />
+    <path d="M15 19c.2-2.2 1.7-3.8 3.7-4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.7" />
+  </svg>
+);
+
+const IconStats = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 20V10M10 20V4M16 20v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M3 20h18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+
+const IconGoal = ({ size = 15 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="#34D399" strokeWidth="1.6" />
+    <path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="#34D399" strokeWidth="1.4" strokeLinecap="round" />
+    <path d="M12 8.5l3 2.2-1.1 3.5H10.1L9 10.7l3-2.2z" fill="#34D399" />
+  </svg>
+);
+
+const IconAssist = ({ size = 15 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="#E5C26A" strokeWidth="1.6" />
+    <path d="M8 13.5l3-3.5 2.2 2 2.8-4" stroke="#E5C26A" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <path d="M13.5 7.7h3.5v3.5" stroke="#E5C26A" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </svg>
+);
+
+const IconCards = ({ size = 15 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="5" width="10" height="14" rx="1.5" fill="#FBBF24" transform="rotate(-8 8 12)" />
+    <rect x="11" y="6" width="10" height="14" rx="1.5" fill="#F87171" transform="rotate(8 16 13)" />
+  </svg>
+);
+
+// Panah rank permanen: SVG, bukan glyph teks (▲▼▬) seperti sebelumnya.
+// PENTING soal "permanen": komponen ini sekarang HANYA bergantung pada nilai `delta`
+// yang datang dari positionDeltas — tidak ada lagi pengecekan isLive di pemanggilnya
+// yang bisa menyembunyikan ikon ini. Selama sebuah club_id punya entri di positionDeltas
+// (yang mana selalu benar setelah render pertama liveStandings, lihat useEffect terkait),
+// panahnya akan selalu tampil terus dan tidak hilang saat pertandingan sudah FT.
+const IconRankArrow = ({ delta, size = 13 }) => {
+  if (delta === 'up') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 12 12" className="rank-arrow rank-up" role="img" aria-label="Naik peringkat">
+        <path d="M6 1.5l4.5 6.8H1.5L6 1.5z" fill="#34D399" />
+      </svg>
+    );
+  }
+  if (delta === 'down') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 12 12" className="rank-arrow rank-down" role="img" aria-label="Turun peringkat">
+        <path d="M6 10.5L1.5 3.7h9L6 10.5z" fill="#F87171" />
+      </svg>
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" className="rank-arrow rank-same" role="img" aria-label="Tetap">
+      <rect x="1.5" y="5.2" width="9" height="1.6" rx="0.8" fill="#9CB0A4" />
+    </svg>
+  );
+};
+
+// Badge W/D/L untuk kolom "Form" (history 5 pertandingan terakhir), gaya bulat kecil
+// warna-blok mirip klasemen Google: hijau=win, merah=loss, abu=draw.
+// title berisi lawan + skor supaya tetap ada info saat di-hover, tanpa perlu tempat
+// ekstra di layar (kolom Form ini sengaja ringkas karena diletakkan di tabel klasemen
+// yang sudah cukup padat kolom-kolomnya).
+const FormBadge = ({ entry }) => {
+  const cls =
+    entry.result === 'W' ? 'form-badge form-win' : entry.result === 'L' ? 'form-badge form-loss' : 'form-badge form-draw';
+  const label = entry.result === 'W' ? 'Menang' : entry.result === 'L' ? 'Kalah' : 'Seri';
+  return (
+    <span className={cls} title={`${label} vs ${entry.opponent} (${entry.scoreLine})`}>
+      {entry.result}
+    </span>
+  );
+};
+
 function App() {
   const [leagues, setLeagues] = useState([]);
   const [selectedLeague, setSelectedLeague] = useState('');
@@ -207,8 +385,9 @@ function App() {
         return next;
       });
       // fetchData juga akan menarik ulang stat pemain (topScorers/topAssists/cardStats)
-      // lewat fetchStats di dalamnya, supaya gol/assist/kartu dari match yang baru selesai
-      // ini langsung kelihatan di halaman Statistik tanpa perlu refresh manual.
+      // dan `matches` (dipakai computeRecentForm) lewat fetchStats/fetch di dalamnya,
+      // supaya gol/assist/kartu DAN kolom Form dari match yang baru selesai ini langsung
+      // kelihatan tanpa perlu refresh manual.
       fetchData(selectedLeague);
       return;
     }
@@ -232,6 +411,10 @@ function App() {
     () => applyLiveOverlay(baseStandings, liveMatches),
     [baseStandings, liveMatches]
   );
+
+  // Form 5 pertandingan terakhir per klub, dihitung ulang setiap `matches` berubah
+  // (yaitu: initial load, ganti liga, generate ulang jadwal, atau sebuah match FINISHED).
+  const recentFormByClub = useMemo(() => computeRecentForm(matches), [matches]);
 
   // Setiap kali liveStandings berubah, bandingkan urutannya dengan urutan SEBELUM render
   // ini (prevOrderRef) untuk menentukan panah naik/turun/tetap per klub, lalu simpan
@@ -279,12 +462,6 @@ function App() {
     return ids;
   }, [liveMatches]);
 
-  const renderRankArrow = (delta) => {
-    if (delta === 'up') return <span className="rank-arrow rank-up" title="Naik peringkat">▲</span>;
-    if (delta === 'down') return <span className="rank-arrow rank-down" title="Turun peringkat">▼</span>;
-    return <span className="rank-arrow rank-same" title="Tetap">▬</span>;
-  };
-
   // === KOMPONEN HALAMAN KLASEMEN & JADWAL ===
   const renderDashboard = () => (
     <>
@@ -306,7 +483,7 @@ function App() {
       <div className="main-col">
         <div className="card">
           <div className="card-h">
-            <span className="g-name">📊 Klasemen Liga</span>
+            <span className="g-name"><IconTrophy /> Klasemen Liga</span>
           </div>
           <div className="table-responsive" style={{ padding: '0 12px 12px' }}>
             <table className="player-table">
@@ -319,18 +496,24 @@ function App() {
                   <th style={{ textAlign: 'center' }}>GM</th>
                   <th style={{ textAlign: 'center' }}>GK</th>
                   <th style={{ textAlign: 'center' }}>Poin</th>
+                  <th className="form-col-header">Form</th>
                 </tr>
               </thead>
               <tbody>
                 {liveStandings.map((team, index) => {
                   const isLive = liveClubIds.has(team.club_id);
+                  // Panah rank sekarang PERMANEN: satu-satunya sumber adalah positionDeltas.
+                  // Tidak ada lagi kondisi terkait isLive/live di sekitar renderRankArrow —
+                  // begitu match FT dan positionDeltas terisi, panah tetap tampil terus,
+                  // tidak hilang hanya karena badge LIVE-nya sudah padam.
                   const delta = positionDeltas[team.club_id] || 'same';
+                  const form = recentFormByClub.get(team.club_id) || [];
                   return (
                     <tr
                       key={team.club_id}
                       className={`${index < 4 ? 'top-tier' : ''} ${isLive ? 'row-live-active' : ''}`}
                     >
-                      <td style={{ textAlign: 'center' }}>{renderRankArrow(delta)}</td>
+                      <td style={{ textAlign: 'center' }}><IconRankArrow delta={delta} /></td>
                       <td className="pos" style={{ color: index === 0 ? '#E5C26A' : 'inherit' }}>{index + 1}</td>
                       <td className="club-name-col">
                         {team.club}
@@ -342,6 +525,13 @@ function App() {
                       <td className="pts">
                         {team.points}
                         {isLive && <span className="pts-live-badge">LIVE</span>}
+                      </td>
+                      <td className="form-col">
+                        {form.length === 0 ? (
+                          <span className="form-empty">—</span>
+                        ) : (
+                          form.map((entry) => <FormBadge key={entry.matchId} entry={entry} />)
+                        )}
                       </td>
                     </tr>
                   );
@@ -357,9 +547,9 @@ function App() {
       <div className="side-col">
         <div className="card">
           <div className="card-h sidebar-header">
-            <span className="g-name" style={{ fontSize: '15px' }}>🗓️ Jadwal</span>
+            <span className="g-name" style={{ fontSize: '15px' }}><IconCalendar /> Jadwal</span>
             <button className="btn-generate" onClick={handleGenerateSchedule}>
-              🔄 Baru
+              <IconRefresh /> Baru
             </button>
           </div>
 
@@ -414,7 +604,7 @@ function App() {
   const renderPlayers = () => (
     <div className="card">
       <div className="card-h">
-        <span className="g-name">⭐ Data Pemain Liga</span>
+        <span className="g-name"><IconPlayers /> Data Pemain Liga</span>
       </div>
       <div className="table-responsive" style={{ padding: '0 12px 12px' }}>
         <table className="player-table">
@@ -449,7 +639,7 @@ function App() {
     if (statsLoading && topScorers.length === 0 && topAssists.length === 0 && cardStats.length === 0) {
       return (
         <div className="card">
-          <div className="card-h"><span className="g-name">📈 Statistik Pemain</span></div>
+          <div className="card-h"><span className="g-name"><IconStats /> Statistik Pemain</span></div>
           <div style={{ padding: '0 15px 15px', color: '#9CB0A4', fontSize: '13px' }}>
             Memuat statistik...
           </div>
@@ -463,7 +653,7 @@ function App() {
       <div className="stats-grid">
         {isEmpty && (
           <div className="card" style={{ gridColumn: '1 / -1' }}>
-            <div className="card-h"><span className="g-name">📈 Statistik Pemain</span></div>
+            <div className="card-h"><span className="g-name"><IconStats /> Statistik Pemain</span></div>
             <div style={{ padding: '0 15px 15px', color: '#9CB0A4', fontSize: '13px' }}>
               Belum ada statistik. Mainkan beberapa pertandingan dulu di Dashboard, lalu kembali ke sini.
             </div>
@@ -473,7 +663,7 @@ function App() {
         {/* TOP SCORER */}
         <div className="card">
           <div className="card-h">
-            <span className="g-name">⚽ Top Scorer</span>
+            <span className="g-name"><IconGoal /> Top Scorer</span>
           </div>
           <div className="table-responsive" style={{ padding: '0 12px 12px' }}>
             <table className="player-table">
@@ -507,7 +697,7 @@ function App() {
         {/* TOP ASSIST */}
         <div className="card">
           <div className="card-h">
-            <span className="g-name">🎯 Top Assist</span>
+            <span className="g-name"><IconAssist /> Top Assist</span>
           </div>
           <div className="table-responsive" style={{ padding: '0 12px 12px' }}>
             <table className="player-table">
@@ -541,7 +731,7 @@ function App() {
         {/* KARTU KUNING / MERAH */}
         <div className="card">
           <div className="card-h">
-            <span className="g-name">🟨🟥 Kartu Pemain</span>
+            <span className="g-name"><IconCards /> Kartu Pemain</span>
           </div>
           <div className="table-responsive" style={{ padding: '0 12px 12px' }}>
             <table className="player-table">
@@ -550,8 +740,8 @@ function App() {
                   <th style={{ width: '30px' }}>#</th>
                   <th>Nama</th>
                   <th>Klub</th>
-                  <th style={{ textAlign: 'center' }}>🟨</th>
-                  <th style={{ textAlign: 'center' }}>🟥</th>
+                  <th style={{ textAlign: 'center' }}>Kuning</th>
+                  <th style={{ textAlign: 'center' }}>Merah</th>
                 </tr>
               </thead>
               <tbody>
@@ -593,19 +783,19 @@ function App() {
             className={`menu-btn ${activePage === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActivePage('dashboard')}
           >
-            📊 <span className="menu-text">Dashboard</span>
+            <IconTrophy size={16} /> <span className="menu-text">Dashboard</span>
           </button>
           <button
             className={`menu-btn ${activePage === 'players' ? 'active' : ''}`}
             onClick={() => setActivePage('players')}
           >
-            🏃‍♂️ <span className="menu-text">Pemain</span>
+            <IconPlayers size={16} /> <span className="menu-text">Pemain</span>
           </button>
           <button
             className={`menu-btn ${activePage === 'stats' ? 'active' : ''}`}
             onClick={() => setActivePage('stats')}
           >
-            📈 <span className="menu-text">Statistik</span>
+            <IconStats size={16} /> <span className="menu-text">Statistik</span>
           </button>
         </nav>
       </aside>
