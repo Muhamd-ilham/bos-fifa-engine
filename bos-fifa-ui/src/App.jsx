@@ -123,7 +123,7 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard');
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/leagues')
+    fetch('https://bos-fifa-engine.vercel.app/api/leagues')
       .then(res => res.json())
       .then(data => {
         setLeagues(data);
