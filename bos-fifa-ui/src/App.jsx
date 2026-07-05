@@ -106,13 +106,13 @@ function computePositionDeltas(prevOrderIds, currentStandings) {
  */
 function computeRecentForm(allMatches) {
   const finished = allMatches
-    console.log('total FINISHED matches:', finished.length);
-console.log('sample finished match:', finished[0]);
-console.log('baseStandings sample club_id:', baseStandings[0]?.club_id, typeof baseStandings[0]?.club_id);
-console.log('sample match home_team_id:', finished[0]?.home_team_id, typeof finished[0]?.home_team_id);
     .filter((m) => m.status === 'FINISHED')
     .slice()
     .sort((a, b) => Number(a.matchday) - Number(b.matchday));
+
+  console.log('total FINISHED matches:', finished.length);
+  console.log('sample finished match:', finished[0]);
+  console.log('sample match home_team_id:', finished[0]?.home_team_id, typeof finished[0]?.home_team_id);
 
   const formByClub = new Map();
 
@@ -423,7 +423,7 @@ function App() {
   // Form 5 pertandingan terakhir per klub, dihitung ulang setiap `matches` berubah
   // (yaitu: initial load, ganti liga, generate ulang jadwal, atau sebuah match FINISHED).
   const recentFormByClub = useMemo(() => computeRecentForm(matches), [matches]);
-
+  console.log('baseStandings sample club_id:', baseStandings[0]?.club_id, typeof baseStandings[0]?.club_id);
   // Setiap kali liveStandings berubah, bandingkan urutannya dengan urutan SEBELUM render
   // ini (prevOrderRef) untuk menentukan panah naik/turun/tetap per klub, lalu simpan
   // urutan baru sebagai baseline pembanding untuk perubahan SELANJUTNYA.
