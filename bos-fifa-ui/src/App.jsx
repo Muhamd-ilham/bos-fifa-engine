@@ -136,17 +136,17 @@ function App() {
   const fetchData = (leagueId) => {
     if (!leagueId) return;
 
-    fetch(`http://localhost:3000/api/players/${leagueId}`)
+    fetch(`https://bos-fifa-engine.vercel.app/api/players/${leagueId}`)
       .then(res => res.json())
       .then(data => setPlayers(data));
 
-    fetch(`http://localhost:3000/api/matches/${leagueId}`)
+    fetch(`https://bos-fifa-engine.vercel.app/api/matches/${leagueId}`)
       .then(res => res.json())
       .then(data => {
         setMatches(data);
       });
 
-    fetch(`http://localhost:3000/api/standings/${leagueId}`)
+    fetch(`https://bos-fifa-engine.vercel.app/api/standings/${leagueId}`)
       .then(res => res.json())
       .then(data => {
         setBaseStandings(data);
@@ -176,9 +176,9 @@ function App() {
     setStatsLoading(true);
 
     Promise.all([
-      fetch(`http://localhost:3000/api/stats/topscorers/${leagueId}`).then(res => res.json()),
-      fetch(`http://localhost:3000/api/stats/topassists/${leagueId}`).then(res => res.json()),
-      fetch(`http://localhost:3000/api/stats/cards/${leagueId}`).then(res => res.json()),
+      fetch(`https://bos-fifa-engine.vercel.app/api/stats/topscorers/${leagueId}`).then(res => res.json()),
+      fetch(`https://bos-fifa-engine.vercel.app/api/stats/topassists/${leagueId}`).then(res => res.json()),
+      fetch(`https://bos-fifa-engine.vercel.app/api/stats/cards/${leagueId}`).then(res => res.json()),
     ])
       .then(([scorers, assists, cards]) => {
         setTopScorers(scorers);
@@ -253,7 +253,7 @@ function App() {
 
   const handleGenerateSchedule = () => {
     if (window.confirm("Buat jadwal semusim Home-Away untuk liga ini? Jadwal lama akan terhapus!")) {
-      fetch(`http://localhost:3000/api/schedule/generate/${selectedLeague}`, { method: 'POST' })
+      fetch(`https://bos-fifa-engine.vercel.app/api/schedule/generate/${selectedLeague}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
           alert(data.message);
@@ -295,7 +295,7 @@ function App() {
       <MatchEngine
         key={id}
         matchId={id}
-        apiBaseUrl="http://localhost:3000"
+        apiBaseUrl="https://bos-fifa-engine.vercel.app"
         onLiveUpdate={handleLiveUpdate}
         onFinished={handleMatchFinished}
       />
