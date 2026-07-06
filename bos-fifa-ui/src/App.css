@@ -645,3 +645,74 @@ td { padding: 12px 10px; border-bottom: 1px solid var(--bg-soft); white-space: n
   cursor: pointer;
   font-weight: bold;
 }
+
+/* =========================================
+   STYLE TAMBAHAN LIVE MATCH SIMULATION
+========================================= */
+.live-clock-badge {
+  font-family: 'SF Mono', monospace;
+  fontWeight: 800;
+  color: #07110C;
+  background: var(--accent-gold);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.scoreboard-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0 16px;
+  background: var(--bg-soft);
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-delicate);
+}
+
+.team-score-block {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.home-side { align-items: flex-end; text-align: right; }
+.away-side { align-items: flex-start; text-align: left; }
+
+.team-name-text {
+  color: #ECEFE8;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.formation-sub-badge {
+  font-size: 11px;
+  color: var(--ink-medium);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.score-box-digits {
+  font-family: 'SF Mono', monospace;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-gold);
+  background: #07110C;
+  padding: 4px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line-delicate);
+  min-width: 80px;
+  text-align: center;
+}
+
+.commentary-scroll-box {
+  background: #07110C;
+  border: 1px solid var(--line-delicate);
+  border-radius: 10px;
+  padding: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
