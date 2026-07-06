@@ -1,10 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import MatchEngine from './MatchEngine';
-import ClubProfile from './ClubProfile';
 import './App.css';
-import './club-profile.css';
-
-const API_BASE_URL = 'https://bos-fifa-engine.vercel.app';
 
 // Hitung poin dari selisih skor: menang=3, seri=1, kalah=0.
 function pointsFor(myScore, oppScore) {
@@ -113,6 +109,10 @@ function computeRecentForm(allMatches) {
     .filter((m) => m.status === 'FINISHED')
     .slice()
     .sort((a, b) => Number(a.matchday) - Number(b.matchday));
+
+  console.log('total FINISHED matches:', finished.length);
+  console.log('sample finished match:', finished[0]);
+  console.log('sample match home_team_id:', finished[0]?.home_team_id, typeof finished[0]?.home_team_id);
 
   const formByClub = new Map();
 
@@ -273,36 +273,6 @@ const FormBadge = ({ entry }) => {
   );
 };
 
-// Logo klub kecil dipakai di klasemen & jadwal. Kalau logo_url kosong atau gagal
-// dimuat (404, url salah, dsb), fallback ke lingkaran inisial 2 huruf pertama nama
-// klub supaya layout tidak "bolong" atau menampilkan broken-image icon browser.
-const ClubLogo = ({ name, logoUrl, size = 20 }) => {
-  const [failed, setFailed] = useState(false);
-  const initials = (name || '?').trim().slice(0, 2).toUpperCase();
-
-  if (!logoUrl || failed) {
-    return (
-      <span
-        className="club-logo-fallback"
-        style={{ width: size, height: size, fontSize: Math.max(8, size * 0.42) }}
-        title={name}
-      >
-        {initials}
-      </span>
-    );
-  }
-
-  return (
-    <img
-      src={logoUrl}
-      alt=""
-      className="club-logo-mini"
-      style={{ width: size, height: size }}
-      onError={() => setFailed(true)}
-    />
-  );
-};
-
 function App() {
   const [leagues, setLeagues] = useState([]);
   const [selectedLeague, setSelectedLeague] = useState('');
@@ -338,14 +308,8 @@ function App() {
   const [currentMatchday, setCurrentMatchday] = useState(1);
   const [activePage, setActivePage] = useState('dashboard');
 
-  // selectedClubId: saat terisi (bukan null), halaman profil klub (ClubProfile)
-  // ditampilkan MENGGANTIKAN konten activePage biasa. Diset lewat klik nama klub
-  // di klasemen (dashboard) atau di tabel Pemain, dan direset ke null oleh tombol
-  // "Kembali" di dalam ClubProfile itu sendiri.
-  const [selectedClubId, setSelectedClubId] = useState(null);
-
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/leagues`)
+    fetch('https://bos-fifa-engine.vercel.app/api/leagues')
       .then(res => res.json())
       .then(data => {
         setLeagues(data);
@@ -358,17 +322,17 @@ function App() {
   const fetchData = (leagueId) => {
     if (!leagueId) return;
 
-    fetch(`${API_BASE_URL}/api/players/${leagueId}`)
+    fetch(`https://bos-fifa-engine.vercel.app/api/players/${leagueId}`)
       .then(res => res.json())
       .then(data => setPlayers(data));
 
-    fetch(`${API_BASE_URL}/api/matches/${leagueId}`)
+    fetch(`https://bos-fifa-engine.vercel.app/api/matches/${leagueId}`)
       .then(res => res.json())
       .then(data => {
         setMatches(data);
       });
 
-    fetch(`${API_BASE_URL}/api/standings/${leagueId}`)
+    fetch(`https://bos-fifa-engine.vercel.app/api/standings/${leagueId}`)
       .then(res => res.json())
       .then(data => {
         setBaseStandings(data);
@@ -398,9 +362,9 @@ function App() {
     setStatsLoading(true);
 
     Promise.all([
-      fetch(`${API_BASE_URL}/api/stats/topscorers/${leagueId}`).then(res => res.json()),
-      fetch(`${API_BASE_URL}/api/stats/topassists/${leagueId}`).then(res => res.json()),
-      fetch(`${API_BASE_URL}/api/stats/cards/${leagueId}`).then(res => res.json()),
+      fetch(`https://bos-fifa-engine.vercel.app/api/stats/topscorers/${leagueId}`).then(res => res.json()),
+      fetch(`https://bos-fifa-engine.vercel.app/api/stats/topassists/${leagueId}`).then(res => res.json()),
+      fetch(`https://bos-fifa-engine.vercel.app/api/stats/cards/${leagueId}`).then(res => res.json()),
     ])
       .then(([scorers, assists, cards]) => {
         setTopScorers(scorers);
@@ -415,7 +379,6 @@ function App() {
     setCurrentMatchday(1);
     setActiveMatchIds([]);
     setLiveMatches({});
-    setSelectedClubId(null);
   }, [selectedLeague]);
 
   // Dipanggil oleh SETIAP instance MatchEngine (bisa banyak sekaligus) tiap kali
@@ -460,7 +423,7 @@ function App() {
   // Form 5 pertandingan terakhir per klub, dihitung ulang setiap `matches` berubah
   // (yaitu: initial load, ganti liga, generate ulang jadwal, atau sebuah match FINISHED).
   const recentFormByClub = useMemo(() => computeRecentForm(matches), [matches]);
-
+  console.log('baseStandings sample club_id:', baseStandings[0]?.club_id, typeof baseStandings[0]?.club_id);
   // Setiap kali liveStandings berubah, bandingkan urutannya dengan urutan SEBELUM render
   // ini (prevOrderRef) untuk menentukan panah naik/turun/tetap per klub, lalu simpan
   // urutan baru sebagai baseline pembanding untuk perubahan SELANJUTNYA.
@@ -481,7 +444,7 @@ function App() {
 
   const handleGenerateSchedule = () => {
     if (window.confirm("Buat jadwal semusim Home-Away untuk liga ini? Jadwal lama akan terhapus!")) {
-      fetch(`${API_BASE_URL}/api/schedule/generate/${selectedLeague}`, { method: 'POST' })
+      fetch(`https://bos-fifa-engine.vercel.app/api/schedule/generate/${selectedLeague}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
           alert(data.message);
@@ -490,18 +453,6 @@ function App() {
           fetchData(selectedLeague);
         });
     }
-  };
-
-  // Buka halaman profil klub. Dipanggil dari klik nama klub di klasemen atau tabel
-  // Pemain. Tidak mengubah activePage — begitu selectedClubId terisi, ClubProfile
-  // dirender menggantikan apa pun yang activePage tunjuk (lihat bagian return di bawah).
-  const handleOpenClubProfile = (clubId) => {
-    if (clubId == null) return;
-    setSelectedClubId(clubId);
-  };
-
-  const handleCloseClubProfile = () => {
-    setSelectedClubId(null);
   };
 
   const maxMatchday = matches.length > 0 ? Math.max(...matches.map(m => Number(m.matchday) || 1)) : 1;
@@ -529,7 +480,7 @@ function App() {
       <MatchEngine
         key={id}
         matchId={id}
-        apiBaseUrl={API_BASE_URL}
+        apiBaseUrl="https://bos-fifa-engine.vercel.app"
         onLiveUpdate={handleLiveUpdate}
         onFinished={handleMatchFinished}
       />
@@ -573,18 +524,7 @@ function App() {
                       <td style={{ textAlign: 'center' }}><IconRankArrow delta={delta} /></td>
                       <td className="pos" style={{ color: index === 0 ? '#E5C26A' : 'inherit' }}>{index + 1}</td>
                       <td className="club-name-col">
-                        {/* Nama klub sekarang tombol yang membuka ClubProfile. Logo kecil
-                            (atau fallback inisial) muncul di sebelah nama supaya klasemen
-                            juga jadi tempat pertama logo-logo yang sudah diisi terlihat. */}
-                        <button
-                          type="button"
-                          className="club-name-link"
-                          onClick={() => handleOpenClubProfile(team.club_id)}
-                          title={`Lihat profil ${team.club}`}
-                        >
-                          <ClubLogo name={team.club} logoUrl={team.logo_url} />
-                          <span>{team.club}</span>
-                        </button>
+                        {team.club}
                         {isLive && <span className="live-dot" title="Sedang bertanding">●</span>}
                       </td>
                       <td>{team.played}</td><td>{team.won}</td><td>{team.drawn}</td><td>{team.lost}</td>
@@ -848,20 +788,20 @@ function App() {
 
         <nav className="sidebar-menu">
           <button
-            className={`menu-btn ${activePage === 'dashboard' && !selectedClubId ? 'active' : ''}`}
-            onClick={() => { setActivePage('dashboard'); setSelectedClubId(null); }}
+            className={`menu-btn ${activePage === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActivePage('dashboard')}
           >
             <IconTrophy size={16} /> <span className="menu-text">Dashboard</span>
           </button>
           <button
-            className={`menu-btn ${activePage === 'players' && !selectedClubId ? 'active' : ''}`}
-            onClick={() => { setActivePage('players'); setSelectedClubId(null); }}
+            className={`menu-btn ${activePage === 'players' ? 'active' : ''}`}
+            onClick={() => setActivePage('players')}
           >
             <IconPlayers size={16} /> <span className="menu-text">Pemain</span>
           </button>
           <button
-            className={`menu-btn ${activePage === 'stats' && !selectedClubId ? 'active' : ''}`}
-            onClick={() => { setActivePage('stats'); setSelectedClubId(null); }}
+            className={`menu-btn ${activePage === 'stats' ? 'active' : ''}`}
+            onClick={() => setActivePage('stats')}
           >
             <IconStats size={16} /> <span className="menu-text">Statistik</span>
           </button>
@@ -870,47 +810,33 @@ function App() {
 
       {/* AREA KONTEN UTAMA */}
       <div className="content-area">
-        {/* HEADER ATAS — disembunyikan saat halaman profil klub aktif, karena
-            ClubProfile punya tombol "Kembali" sendiri dan judul halaman generik
-            (mis. "Dashboard Turnamen") tidak relevan lagi saat melihat satu klub. */}
-        {!selectedClubId && (
-          <header className="top-header">
-            <div className="header-title-box">
-              <h2>
-                {activePage === 'dashboard' && 'Dashboard Turnamen'}
-                {activePage === 'players' && 'Manajemen Pemain'}
-                {activePage === 'stats' && 'Statistik Pemain'}
-              </h2>
+        {/* HEADER ATAS */}
+        <header className="top-header">
+          <div className="header-title-box">
+            <h2>
+              {activePage === 'dashboard' && 'Dashboard Turnamen'}
+              {activePage === 'players' && 'Manajemen Pemain'}
+              {activePage === 'stats' && 'Statistik Pemain'}
+            </h2>
 
-            </div>
+          </div>
 
-            <div className="league-selector-box">
-              <select
-                value={selectedLeague}
-                onChange={(e) => setSelectedLeague(e.target.value)}
-              >
-                {leagues.map(l => (
-                  <option key={l.id} value={l.id}>{l.name} ({l.total_clubs} Klub)</option>
-                ))}
-              </select>
-            </div>
-          </header>
-        )}
+          <div className="league-selector-box">
+            <select
+              value={selectedLeague}
+              onChange={(e) => setSelectedLeague(e.target.value)}
+            >
+              {leagues.map(l => (
+                <option key={l.id} value={l.id}>{l.name} ({l.total_clubs} Klub)</option>
+              ))}
+            </select>
+          </div>
+        </header>
 
         <main className="main-wrapper">
-          {selectedClubId ? (
-            <ClubProfile
-              clubId={selectedClubId}
-              apiBaseUrl={API_BASE_URL}
-              onBack={handleCloseClubProfile}
-            />
-          ) : (
-            <>
-              {activePage === 'dashboard' && renderDashboard()}
-              {activePage === 'players' && renderPlayers()}
-              {activePage === 'stats' && renderStats()}
-            </>
-          )}
+          {activePage === 'dashboard' && renderDashboard()}
+          {activePage === 'players' && renderPlayers()}
+          {activePage === 'stats' && renderStats()}
         </main>
       </div>
     </div>
