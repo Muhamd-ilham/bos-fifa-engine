@@ -437,11 +437,12 @@ app.put('/api/clubs/:id', async (req, res) => {
 app.get('/api/standings/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
-        const query = `
+       const query = `
             SELECT * FROM (
                 SELECT
                     c.id AS club_id,
                     c.name AS club,
+                    c.logo_url,
                     COUNT(m.id) AS played,
                     COALESCE(SUM(CASE WHEN (m.home_team_id = c.id AND m.home_score > m.away_score) OR (m.away_team_id = c.id AND m.away_score > m.home_score) THEN 1 ELSE 0 END), 0) AS won,
                     COALESCE(SUM(CASE WHEN m.home_score = m.away_score THEN 1 ELSE 0 END), 0) AS drawn,
@@ -453,7 +454,7 @@ app.get('/api/standings/:leagueId', async (req, res) => {
                 FROM clubs c
                 LEFT JOIN matches m ON (c.id = m.home_team_id OR c.id = m.away_team_id) AND m.status = 'FINISHED'
                 WHERE c.league_id = $1
-                GROUP BY c.id, c.name
+                GROUP BY c.id, c.name, c.logo_url
             ) sub
             ORDER BY points DESC, (goals_for - goals_against) DESC, goals_for DESC;
         `;
@@ -533,7 +534,9 @@ app.get('/api/matches/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
         const query = `
-            SELECT m.id, m.home_team_id, m.away_team_id, h.name AS home_team, a.name AS away_team, 
+            SELECT m.id, m.home_team_id, m.away_team_id, 
+                   h.name AS home_team, a.name AS away_team, 
+                   h.logo_url AS home_logo, a.logo_url AS away_logo, 
                    m.home_score, m.away_score, m.status, m.matchday 
             FROM matches m
             JOIN clubs h ON m.home_team_id = h.id
