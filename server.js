@@ -60,35 +60,33 @@ function normalizePositionGroup(rawPosition) {
 }
 
 async function getStartingLineup(clubId) {
-    // Ambil semua pemain di klub tersebut, urutkan dari yang terjago
     const query = `
-        SELECT id, name, position, overall_rating
+        SELECT id, name, position, overall_rating, shooting, passing, defending
         FROM players
         WHERE club_id = $1
         ORDER BY overall_rating DESC
     `;
     const result = await pool.query(query, [clubId]);
 
-    // Normalisasi posisi
     const allPlayers = result.rows.map(p => ({
         id: p.id,
         name: p.name,
         position: p.position,
         positionGroup: normalizePositionGroup(p.position),
-        overall_rating: p.overall_rating
+        overall_rating: p.overall_rating,
+        shooting: p.shooting,
+        passing: p.passing,
+        defending: p.defending
     }));
 
     const lineup = [];
-    const quotas = { GK: 1, DEF: 4, MID: 4, FWD: 2 }; // Kuota standar formasi seimbang
-
-    // Masukkan pemain terbaik sesuai kuota masing-masing posisi
+    const quotas = { GK: 1, DEF: 4, MID: 4, FWD: 2 };
+    
     for (const pos of ['GK', 'DEF', 'MID', 'FWD']) {
         const posPlayers = allPlayers.filter(p => p.positionGroup === pos);
         lineup.push(...posPlayers.slice(0, quotas[pos]));
     }
 
-    // PENTING: Kalau ternyata formasi belum genap 11 orang (misal klub kekurangan bek)
-    // Tambal sisa slot dengan pemain OVR tertinggi yang belum terpilih
     if (lineup.length < 11) {
         const pickedIds = new Set(lineup.map(p => p.id));
         const remainingPlayers = allPlayers.filter(p => !pickedIds.has(p.id));
@@ -96,7 +94,6 @@ async function getStartingLineup(clubId) {
         lineup.push(...remainingPlayers.slice(0, needed));
     }
 
-    // Urutkan rapi dari Kiper sampai Striker
     const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
     return lineup.sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
 }
@@ -355,7 +352,7 @@ app.get('/api/players/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
         const query = `
-            SELECT p.id, p.name, p.position, p.overall_rating, p.club_id, c.name AS club 
+            SELECT p.id, p.name, p.position, p.overall_rating, p.shooting, p.passing, p.defending, p.club_id, c.name AS club 
             FROM players p
             JOIN clubs c ON p.club_id = c.id
             WHERE c.league_id = $1
@@ -522,21 +519,30 @@ app.put('/api/clubs/:id', async (req, res) => {
 
 app.post('/api/players', async (req, res) => {
     try {
-        const { name, position, overall_rating, club_id } = req.body;
+        const { name, position, overall_rating, club_id, shooting, passing, defending } = req.body;
+        
+        // PENGAMANAN: Otomatis bikin kolom kalau di DB belum ada
+        await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS shooting INT DEFAULT 70`);
+        await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS passing INT DEFAULT 70`);
+        await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS defending INT DEFAULT 70`);
+
         await pool.query(
-            'INSERT INTO players (name, position, overall_rating, club_id, goals, assists, yellow_cards, red_cards) VALUES ($1, $2, $3, $4, 0, 0, 0, 0)',
-            [name, position, overall_rating, club_id]
+            'INSERT INTO players (name, position, overall_rating, club_id, shooting, passing, defending, goals, assists, yellow_cards, red_cards) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0)',
+            [name, position, overall_rating, club_id, shooting || 70, passing || 70, defending || 70]
         );
         res.json({ message: 'Pemain berhasil ditambahkan!' });
-    } catch (err) { res.status(500).send('Server Error'); }
+    } catch (err) { 
+        console.error(err);
+        res.status(500).send('Server Error'); 
+    }
 });
 
 app.put('/api/players/:id', async (req, res) => {
     try {
-        const { name, position, overall_rating } = req.body;
+        const { name, position, overall_rating, shooting, passing, defending } = req.body;
         await pool.query(
-            'UPDATE players SET name = $1, position = $2, overall_rating = $3 WHERE id = $4',
-            [name, position, overall_rating, req.params.id]
+            'UPDATE players SET name = $1, position = $2, overall_rating = $3, shooting = $4, passing = $5, defending = $6 WHERE id = $7',
+            [name, position, overall_rating, shooting || 70, passing || 70, defending || 70, req.params.id]
         );
         res.json({ message: 'Data pemain berhasil diupdate!' });
     } catch (err) { res.status(500).send('Server Error'); }
