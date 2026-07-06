@@ -48,75 +48,61 @@ const CARD_WEIGHTS = { DEF: 4, MID: 3, FWD: 1.5, GK: 0.3 };
 // SEKARANG setiap GOAL/KARTU_KUNING/KARTU_MERAH juga membawa nama & id pemain spesifik
 // (diambil dari starting XI tim terkait), supaya bisa: (1) disebut di commentary, dan
 // (2) diakumulasikan ke stat permanen pemain (goals/assists/cards) setelah match selesai.
+// === MESIN KECERDASAN PELATIH AI ===
+function autoPickFormation(lineup) {
+    if (!lineup || lineup.length === 0) return '4-4-2'; // Default
+    let defScore = 0, midScore = 0, fwdScore = 0;
+    lineup.forEach(p => {
+        if (p.positionGroup === 'DEF') defScore += p.overall_rating;
+        else if (p.positionGroup === 'MID') midScore += p.overall_rating;
+        else if (p.positionGroup === 'FWD') fwdScore += p.overall_rating;
+    });
+    
+    // Logika pemilihan formasi berdasarkan kekuatan OVR Starting XI
+    if (fwdScore > defScore && fwdScore > midScore) return ['4-3-3', '4-2-4', '3-4-3'][Math.floor(Math.random()*3)];
+    if (defScore > midScore && defScore > fwdScore) return ['5-3-2', '5-4-1', '4-5-1'][Math.floor(Math.random()*3)];
+    return ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'][Math.floor(Math.random()*4)];
+}
+
 function simulateFullMatch(home, away, homeLineup, awayLineup) {
     const BASE_GOALS = 1.35;
-    const homeAttackPower = Math.pow(home.att, 1.5);
-    const awayDefensePower = Math.pow(away.def, 1.5);
-    const awayAttackPower = Math.pow(away.att, 1.5);
-    const homeDefensePower = Math.pow(home.def, 1.5);
-
-    const homeLambda = BASE_GOALS * (homeAttackPower / awayDefensePower) * (home.ovr / away.ovr);
-    const awayLambda = BASE_GOALS * (awayAttackPower / homeDefensePower) * (away.ovr / home.ovr);
+    const homeLambda = BASE_GOALS * (Math.pow(home.att, 1.5) / Math.pow(away.def, 1.5)) * (home.ovr / away.ovr);
+    const awayLambda = BASE_GOALS * (Math.pow(away.att, 1.5) / Math.pow(home.def, 1.5)) * (away.ovr / home.ovr);
 
     const totalHomeGoals = poissonRandom(homeLambda);
     const totalAwayGoals = poissonRandom(awayLambda);
 
     const events = [];
-    let homeScore = 0;
-    let awayScore = 0;
+    let homeScore = 0; let awayScore = 0;
 
-    // Sebar gol home & away secara acak sepanjang menit 1-90 (+ extra time 90-95)
     const homeGoalMinutes = generateGoalMinutes(totalHomeGoals);
     const awayGoalMinutes = generateGoalMinutes(totalAwayGoals);
 
-    // Generate kejadian tambahan biar berasa "real match": peluang, kartu, cedera
-    const totalChances = Math.floor((homeLambda + awayLambda) * 3); // makin kuat serangan, makin banyak peluang
+    const totalChances = Math.floor((homeLambda + awayLambda) * 3);
     const chanceMinutes = new Set();
-    while (chanceMinutes.size < totalChances) {
-        chanceMinutes.add(1 + Math.floor(Math.random() * 95));
-    }
+    while (chanceMinutes.size < totalChances) chanceMinutes.add(1 + Math.floor(Math.random() * 95));
 
     const cardMinutes = [];
-    const cardCount = Math.floor(Math.random() * 5); // 0-4 kartu per pertandingan
-    for (let i = 0; i < cardCount; i++) {
-        cardMinutes.push(1 + Math.floor(Math.random() * 95));
-    }
+    const cardCount = Math.floor(Math.random() * 5);
+    for (let i = 0; i < cardCount; i++) cardMinutes.push(1 + Math.floor(Math.random() * 95));
 
-    // Akumulator stat per pemain untuk match ini saja (nanti dijumlahkan ke DB oleh caller).
-    // Key = player name (unik dalam satu lineup 11 pemain, cukup sebagai identifier lokal).
-    const statsThisMatch = new Map(); // name -> { goals, assists, yellow_cards, red_cards, positionGroup, team }
-
+    const statsThisMatch = new Map();
     function ensureStat(player, team) {
         if (!statsThisMatch.has(player.name)) {
-            statsThisMatch.set(player.name, {
-                name: player.name,
-                team,
-                positionGroup: player.positionGroup,
-                goals: 0,
-                assists: 0,
-                yellow_cards: 0,
-                red_cards: 0,
-            });
+            statsThisMatch.set(player.name, { name: player.name, team, positionGroup: player.positionGroup, goals: 0, assists: 0, yellow_cards: 0, red_cards: 0 });
         }
         return statsThisMatch.get(player.name);
     }
 
-    // Pilih pencetak gol + (opsional) assister untuk satu tim, kembalikan info buat event & akumulasi.
     function resolveGoal(team, lineup) {
         const scorer = pickWeightedPlayer(lineup, GOAL_WEIGHTS);
         if (!scorer) return { scorerName: null, assisterName: null };
-
         ensureStat(scorer, team).goals += 1;
-
-        // 75% gol punya assist (sisanya solo run / sundulan tanpa assist tercatat)
         let assisterName = null;
         if (Math.random() < 0.75) {
             const candidates = lineup.filter((p) => p.name !== scorer.name);
             const assister = pickWeightedPlayer(candidates, ASSIST_WEIGHTS);
-            if (assister) {
-                ensureStat(assister, team).assists += 1;
-                assisterName = assister.name;
-            }
+            if (assister) { ensureStat(assister, team).assists += 1; assisterName = assister.name; }
         }
         return { scorerName: scorer.name, assisterName };
     }
@@ -126,283 +112,134 @@ function simulateFullMatch(home, away, homeLineup, awayLineup) {
         if (!player) return { playerName: null, cardType: null };
         const isRed = Math.random() < 0.15;
         const stat = ensureStat(player, team);
-        if (isRed) stat.red_cards += 1;
-        else stat.yellow_cards += 1;
+        if (isRed) stat.red_cards += 1; else stat.yellow_cards += 1;
         return { playerName: player.name, cardType: isRed ? 'KARTU_MERAH' : 'KARTU_KUNING' };
     }
 
-    // Gabungkan semua kejadian jadi satu timeline terurut per menit
     for (let minute = 1; minute <= 95; minute++) {
         if (homeGoalMinutes.includes(minute)) {
             homeScore++;
             const { scorerName, assisterName } = resolveGoal('HOME', homeLineup);
-            events.push({
-                minute,
-                type: 'GOAL',
-                team: 'HOME',
-                score: `${homeScore}-${awayScore}`,
-                playerName: scorerName,
-                assistName: assisterName,
-            });
+            events.push({ minute, type: 'GOAL', team: 'HOME', score: `${homeScore}-${awayScore}`, playerName: scorerName, assistName: assisterName });
         }
         if (awayGoalMinutes.includes(minute)) {
             awayScore++;
             const { scorerName, assisterName } = resolveGoal('AWAY', awayLineup);
-            events.push({
-                minute,
-                type: 'GOAL',
-                team: 'AWAY',
-                score: `${homeScore}-${awayScore}`,
-                playerName: scorerName,
-                assistName: assisterName,
-            });
+            events.push({ minute, type: 'GOAL', team: 'AWAY', score: `${homeScore}-${awayScore}`, playerName: scorerName, assistName: assisterName });
         }
         if (chanceMinutes.has(minute) && !homeGoalMinutes.includes(minute) && !awayGoalMinutes.includes(minute)) {
             const chanceTeam = Math.random() < (homeLambda / (homeLambda + awayLambda)) ? 'HOME' : 'AWAY';
             const chanceLineup = chanceTeam === 'HOME' ? homeLineup : awayLineup;
             const chancePlayer = pickWeightedPlayer(chanceLineup, GOAL_WEIGHTS);
-            const chanceType = Math.random() < 0.5 ? 'PELUANG_EMAS' : 'TENDANGAN_MELENCENG';
-            events.push({
-                minute,
-                type: chanceType,
-                team: chanceTeam,
-                playerName: chancePlayer ? chancePlayer.name : null,
-            });
+            events.push({ minute, type: Math.random() < 0.5 ? 'PELUANG_EMAS' : 'TENDANGAN_MELENCENG', team: chanceTeam, playerName: chancePlayer ? chancePlayer.name : null });
         }
         if (cardMinutes.includes(minute)) {
             const cardTeam = Math.random() < 0.5 ? 'HOME' : 'AWAY';
             const cardLineup = cardTeam === 'HOME' ? homeLineup : awayLineup;
             const { playerName, cardType } = resolveCard(cardTeam, cardLineup);
-            if (cardType) {
-                events.push({ minute, type: cardType, team: cardTeam, playerName });
-            }
+            if (cardType) events.push({ minute, type: cardType, team: cardTeam, playerName });
+        }
+
+        // 🔥 KECERDASAN PELATIH AI DI TENGAH LAGA (Real-Time Tactics) 🔥
+        if (minute === 45) {
+            // Half-time team talk: Jika tertinggal, ubah ke mode Ultra Menyerang!
+            if (homeScore < awayScore) events.push({ minute: 45, type: 'TACTIC_CHANGE', team: 'HOME', newFormation: '3-4-3' });
+            if (awayScore < homeScore) events.push({ minute: 45, type: 'TACTIC_CHANGE', team: 'AWAY', newFormation: '3-4-3' });
+        }
+        if (minute === 75) {
+            // Menit 75: Jika unggul, pelatih AI parkir bus untuk mengamankan kemenangan!
+            if (homeScore > awayScore) events.push({ minute: 75, type: 'TACTIC_CHANGE', team: 'HOME', newFormation: '5-4-1' });
+            if (awayScore > homeScore) events.push({ minute: 75, type: 'TACTIC_CHANGE', team: 'AWAY', newFormation: '5-4-1' });
         }
     }
 
-    // Sisipkan kick-off dan full-time markers
     events.unshift({ minute: 0, type: 'KICK_OFF', team: null, score: '0-0' });
     events.push({ minute: 95, type: 'FULL_TIME', team: null, score: `${homeScore}-${awayScore}` });
-
-    // Urutkan berdasarkan menit (kick-off dan full-time udah di posisi awal/akhir yang benar)
     events.sort((a, b) => a.minute - b.minute);
 
-    return {
-        finalHomeScore: homeScore,
-        finalAwayScore: awayScore,
-        timeline: events,
-        playerStats: Array.from(statsThisMatch.values()),
-        lambdas: { home: homeLambda.toFixed(2), away: awayLambda.toFixed(2) }
-    };
-}
-
-// Helper: sebar N gol ke menit-menit acak (1-95), gak boleh dobel menit yang sama
-function generateGoalMinutes(count) {
-    const minutes = new Set();
-    while (minutes.size < count) {
-        minutes.add(1 + Math.floor(Math.random() * 95));
-    }
-    return Array.from(minutes);
-}
-
-// Helper: klasifikasi posisi mentah dari DB ke grup formasi (GK/DEF/MID/FWD)
-function normalizePositionGroup(rawPosition) {
-    if (!rawPosition) return 'MID';
-    const pos = rawPosition.toUpperCase();
-    if (pos.includes('GK')) return 'GK';
-    if (pos.includes('CB') || pos.includes('LB') || pos.includes('RB') || pos.includes('WB') || pos.includes('DEF')) return 'DEF';
-    if (pos.includes('ST') || pos.includes('CF') || pos.includes('LW') || pos.includes('RW') || pos.includes('FWD')) return 'FWD';
-    return 'MID';
-}
-
-// Helper: ambil starting XI satu klub (+ id pemain, dibutuhkan untuk update stat ke DB),
-// urut GK -> DEF -> MID -> FWD biar gampang dipetakan ke formasi
-async function getStartingLineup(clubId) {
-    const query = `
-        SELECT id, name, position, overall_rating
-        FROM players
-        WHERE club_id = $1
-        ORDER BY overall_rating DESC
-        LIMIT 11
-    `;
-    const result = await pool.query(query, [clubId]);
-    const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
-
-    return result.rows
-        .map(p => ({
-            id: p.id,
-            name: p.name,
-            position: p.position,
-            positionGroup: normalizePositionGroup(p.position),
-            overall_rating: p.overall_rating
-        }))
-        .sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
-}
-
-// Simpan akumulasi stat pemain (goals/assists/cards) hasil satu match ke DB secara permanen.
-// Dipanggil TEPAT SEKALI per match (saat status baru berubah ke FINISHED), lookup player id
-// berdasarkan name+club supaya cocok dengan baris di homeLineup/awayLineup.
-async function persistPlayerStats(playerStats, homeLineup, awayLineup) {
-    if (!playerStats || playerStats.length === 0) return;
-
-    const idByName = new Map();
-    [...homeLineup, ...awayLineup].forEach((p) => idByName.set(p.name, p.id));
-
-    for (const stat of playerStats) {
-        const playerId = idByName.get(stat.name);
-        if (!playerId) continue;
-        await pool.query(
-            `UPDATE players
-             SET goals = goals + $1,
-                 assists = assists + $2,
-                 yellow_cards = yellow_cards + $3,
-                 red_cards = red_cards + $4
-             WHERE id = $5`,
-            [stat.goals, stat.assists, stat.yellow_cards, stat.red_cards, playerId]
-        );
-    }
+    return { finalHomeScore: homeScore, finalAwayScore: awayScore, timeline: events, playerStats: Array.from(statsThisMatch.values()), lambdas: { home: homeLambda.toFixed(2), away: awayLambda.toFixed(2) } };
 }
 
 app.post('/api/matches/simulate/:id', async (req, res) => {
     try {
         const matchId = req.params.id;
-
         const matchRes = await pool.query("SELECT home_team_id, away_team_id, status FROM matches WHERE id = $1", [matchId]);
         const match = matchRes.rows[0];
 
         if (!match) return res.status(404).json({ message: "Pertandingan tidak ditemukan!" });
-        if (match.status === 'FINISHED') {
-            return res.status(409).json({ message: "Pertandingan ini sudah selesai." });
-        }
+        if (match.status === 'FINISHED') return res.status(409).json({ message: "Pertandingan ini sudah selesai." });
 
-        // 1. AMBIL FORMASI DAN DATA KLUB DARI DATABASE
-        const clubNamesRes = await pool.query('SELECT id, name, formation FROM clubs WHERE id IN ($1, $2)', [match.home_team_id, match.away_team_id]);
-        const clubDataMap = {};
-        clubNamesRes.rows.forEach(c => { clubDataMap[c.id] = c; });
+        const clubNamesRes = await pool.query('SELECT id, name FROM clubs WHERE id IN ($1, $2)', [match.home_team_id, match.away_team_id]);
+        const clubDataMap = {}; clubNamesRes.rows.forEach(c => { clubDataMap[c.id] = c; });
 
-        const homeClub = clubDataMap[match.home_team_id] || { name: 'Home', formation: '4-3-3' };
-        const awayClub = clubDataMap[match.away_team_id] || { name: 'Away', formation: '4-3-3' };
-
-        // 2. HITUNG KEKUATAN BASE BERDASARKAN 11 PEMAIN TOP (STARTING XI)
-        const strengthQuery = `
-            WITH ranked_players AS (
-                SELECT 
-                    club_id, 
-                    overall_rating, 
-                    shooting, 
-                    passing, 
-                    defending,
-                    ROW_NUMBER() OVER(PARTITION BY club_id ORDER BY overall_rating DESC) as rn
-                FROM players 
-                WHERE club_id IN ($1, $2)
-            )
-            SELECT 
-                club_id, 
-                AVG(overall_rating) as team_ovr,
-                AVG(shooting + passing) / 2 as team_attack,
-                AVG(defending) as team_defense
-            FROM ranked_players 
-            WHERE rn <= 11
-            GROUP BY club_id
-        `;
-        
-        const strengthRes = await pool.query(strengthQuery, [match.home_team_id, match.away_team_id]);
-
-        let home = { ovr: 70, att: 70, def: 70, formation: homeClub.formation || '4-3-3' };
-        let away = { ovr: 70, att: 70, def: 70, formation: awayClub.formation || '4-3-3' };
-
-        strengthRes.rows.forEach(row => {
-            if (row.club_id === match.home_team_id) {
-                home.ovr = parseFloat(row.team_ovr);
-                home.att = parseFloat(row.team_attack);
-                home.def = parseFloat(row.team_defense);
-            }
-            if (row.club_id === match.away_team_id) {
-                away.ovr = parseFloat(row.team_ovr);
-                away.att = parseFloat(row.team_attack);
-                away.def = parseFloat(row.team_defense);
-            }
-        });
-
-        // 3. MACHINE LEARNING ENGINE: MODIFIER STRATEGI FORMASI
-        // Setiap formasi memberikan efek buff/nerf pada lini serang atau bertahan
-        // 3. MACHINE LEARNING ENGINE: MODIFIER STRATEGI FORMASI (10+ Formasi)
-        const applyFormationBuffs = (stats) => {
-            const f = stats.formation;
-            if (f === '4-3-3') { stats.att += 4; stats.def -= 2; }
-            else if (f === '5-3-2') { stats.att -= 2; stats.def += 5; }
-            else if (f === '4-4-2') { stats.att += 2; stats.def += 2; }
-            else if (f === '3-5-2') { stats.att += 3; stats.def += 1; stats.ovr += 1; }
-            else if (f === '4-2-3-1') { stats.att += 2; stats.def += 3; }
-            else if (f === '3-4-3') { stats.att += 5; stats.def -= 3; }
-            else if (f === '5-4-1') { stats.att -= 3; stats.def += 6; }
-            else if (f === '4-2-4') { stats.att += 6; stats.def -= 4; }
-            else if (f === '4-5-1') { stats.att += 1; stats.def += 4; }
-            else if (f === '4-1-4-1') { stats.att += 2; stats.def += 4; }
-        };
-        applyFormationBuffs(home);
-        applyFormationBuffs(away);
-
-        // BONUS KEUNTUNGAN KANDANG (HOME ADVANTAGE)
-        home.att += 3;
-        home.def += 2;
-
-        // 4. DECISION MATRIX: COUNTER FORMASI (AI INTELLIGENCE)
-        const checkCounter = (f1, f2) => {
-            const attacking = ['4-3-3', '4-2-4', '3-4-3'];
-            const defensive = ['5-3-2', '5-4-1', '4-5-1'];
-            const control = ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'];
-            
-            // Attacking membongkar Defensive
-            if (attacking.includes(f1) && defensive.includes(f2)) return true;
-            // Defensive menghancurkan Control (Serangan Balik)
-            if (defensive.includes(f1) && control.includes(f2)) return true;
-            // Control mematikan Attacking (Memutus aliran bola)
-            if (control.includes(f1) && attacking.includes(f2)) return true;
-            return false;
-        };
-
-        if (checkCounter(home.formation, away.formation)) {
-            home.ovr += 5; home.att += 4; // Home Counter Taktik Away!
-        } else if (checkCounter(away.formation, home.formation)) {
-            away.ovr += 5; away.att += 4; // Away Counter Taktik Home!
-        }
-
-        // Ambil data lineup pemain untuk match events
         const [homeLineup, awayLineup] = await Promise.all([
             getStartingLineup(match.home_team_id),
             getStartingLineup(match.away_team_id)
         ]);
 
-        // Jalankan Simulasi Engine Matematika Poisson
+        // 🔥 BIARKAN AI MENENTUKAN FORMASI AWAL SEBELUM KICK-OFF
+        const startFormationHome = autoPickFormation(homeLineup);
+        const startFormationAway = autoPickFormation(awayLineup);
+
+        const strengthQuery = `
+            WITH ranked_players AS (
+                SELECT club_id, overall_rating, shooting, passing, defending, ROW_NUMBER() OVER(PARTITION BY club_id ORDER BY overall_rating DESC) as rn
+                FROM players WHERE club_id IN ($1, $2)
+            )
+            SELECT club_id, AVG(overall_rating) as team_ovr, AVG(shooting + passing) / 2 as team_attack, AVG(defending) as team_defense
+            FROM ranked_players WHERE rn <= 11 GROUP BY club_id
+        `;
+        const strengthRes = await pool.query(strengthQuery, [match.home_team_id, match.away_team_id]);
+
+        let home = { ovr: 70, att: 70, def: 70, formation: startFormationHome };
+        let away = { ovr: 70, att: 70, def: 70, formation: startFormationAway };
+
+        strengthRes.rows.forEach(row => {
+            if (row.club_id === match.home_team_id) { home.ovr = parseFloat(row.team_ovr); home.att = parseFloat(row.team_attack); home.def = parseFloat(row.team_defense); }
+            if (row.club_id === match.away_team_id) { away.ovr = parseFloat(row.team_ovr); away.att = parseFloat(row.team_attack); away.def = parseFloat(row.team_defense); }
+        });
+
+        // Terapkan Bonus Taktik
+        const applyFormationBuffs = (stats) => {
+            const f = stats.formation;
+            if (['4-3-3', '4-2-4', '3-4-3'].includes(f)) { stats.att += 4; stats.def -= 2; }
+            else if (['5-3-2', '5-4-1', '4-5-1'].includes(f)) { stats.att -= 2; stats.def += 5; }
+            else { stats.att += 2; stats.def += 3; }
+        };
+        applyFormationBuffs(home); applyFormationBuffs(away);
+        home.att += 3; home.def += 2;
+
+        const checkCounter = (f1, f2) => {
+            const attacking = ['4-3-3', '4-2-4', '3-4-3'];
+            const defensive = ['5-3-2', '5-4-1', '4-5-1'];
+            const control = ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'];
+            if (attacking.includes(f1) && defensive.includes(f2)) return true;
+            if (defensive.includes(f1) && control.includes(f2)) return true;
+            if (control.includes(f1) && attacking.includes(f2)) return true;
+            return false;
+        };
+
+        if (checkCounter(home.formation, away.formation)) { home.ovr += 5; home.att += 4; }
+        else if (checkCounter(away.formation, home.formation)) { away.ovr += 5; away.att += 4; }
+
         const matchResult = simulateFullMatch(home, away, homeLineup, awayLineup);
 
-        const updateQuery = `
-            UPDATE matches 
-            SET home_score = $1, away_score = $2, status = 'FINISHED' 
-            WHERE id = $3 RETURNING *
-        `;
+        const updateQuery = `UPDATE matches SET home_score = $1, away_score = $2, status = 'FINISHED' WHERE id = $3 RETURNING *`;
         const result = await pool.query(updateQuery, [matchResult.finalHomeScore, matchResult.finalAwayScore, matchId]);
         await persistPlayerStats(matchResult.playerStats, homeLineup, awayLineup);
         
         res.json({ 
             message: `Peluit panjang! Skor akhir ${matchResult.finalHomeScore}-${matchResult.finalAwayScore}.`, 
-            result: {
-                ...result.rows[0],
-                home_team_name: homeClub.name,
-                away_team_name: awayClub.name
-            },
+            result: { ...result.rows[0], home_team_name: clubDataMap[match.home_team_id]?.name, away_team_name: clubDataMap[match.away_team_id]?.name },
             timeline: matchResult.timeline,
-            home_lineup: homeLineup,
-            away_lineup: awayLineup,
-            home_formation: home.formation, // Kirim ke frontend untuk info taktik
-            away_formation: away.formation
+            home_formation: startFormationHome,
+            away_formation: startFormationAway
         });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
 });
-
 
 app.get('/api/leagues', async (req, res) => {
     try {
