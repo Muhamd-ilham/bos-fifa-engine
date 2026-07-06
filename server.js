@@ -405,6 +405,50 @@ app.get('/api/players/:leagueId', async (req, res) => {
     } catch (err) { res.status(500).send('Server Error'); }
 });
 
+// === ENDPOINT MANAJEMEN PEMAIN (CRUD) ===
+
+// 1. Tambah Pemain Baru
+app.post('/api/players', async (req, res) => {
+    try {
+        const { name, position, overall_rating, club_id } = req.body;
+        // Default gol/assist/kartu diset 0 untuk pemain baru
+        await pool.query(
+            'INSERT INTO players (name, position, overall_rating, club_id, goals, assists, yellow_cards, red_cards) VALUES ($1, $2, $3, $4, 0, 0, 0, 0)',
+            [name, position, overall_rating, club_id]
+        );
+        res.json({ message: 'Pemain berhasil ditambahkan!' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// 2. Edit/Update Pemain
+app.put('/api/players/:id', async (req, res) => {
+    try {
+        const { name, position, overall_rating } = req.body;
+        await pool.query(
+            'UPDATE players SET name = $1, position = $2, overall_rating = $3 WHERE id = $4',
+            [name, position, overall_rating, req.params.id]
+        );
+        res.json({ message: 'Data pemain berhasil diupdate!' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// 3. Pecat/Hapus Pemain
+app.delete('/api/players/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM players WHERE id = $1', [req.params.id]);
+        res.json({ message: 'Pemain berhasil dihapus!' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 app.get('/api/clubs/:id', async (req, res) => {
     try {
         // Otomatis bikin kolom kalau belum ada di DB (Jalur Ninja)
