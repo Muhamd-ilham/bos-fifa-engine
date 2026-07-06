@@ -1,13 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
-// Berapa milidetik nyata per 1 menit simulasi.
 const MS_PER_MINUTE = 450;
 const HALFTIME_PAUSE_MS = 4000;
 
-// Commentary sekarang menyertakan nama pemain (scorer/assister/kartu) kalau event.playerName
-// tersedia — dikirim backend berdasarkan starting XI tim terkait. Kalau untuk alasan apapun
-// playerName tidak ada (misal lineup kosong), fallback ke frasa generik lama supaya tidak
-// pernah menampilkan "undefined".
 function commentaryLine(event, homeName, awayName) {
   const teamName = event.team === 'HOME' ? homeName : event.team === 'AWAY' ? awayName : null;
   switch (event.type) {
@@ -24,9 +19,7 @@ function commentaryLine(event, homeName, awayName) {
     }
     case 'TENDANGAN_MELENCENG': {
       const who = event.playerName ? event.playerName : `Tendangan ${teamName}`;
-      return event.playerName
-        ? `Tendangan ${who} melenceng jauh dari gawang.`
-        : `${who} melenceng jauh dari gawang.`;
+      return event.playerName ? `Tendangan ${who} melenceng jauh.` : `${who} melenceng jauh.`;
     }
     case 'KARTU_KUNING': {
       const who = event.playerName ? event.playerName : `pemain ${teamName}`;
@@ -43,25 +36,6 @@ function commentaryLine(event, homeName, awayName) {
   }
 }
 
-/**
- * MatchEngine — text-only match viewer, SATU INSTANCE = SATU PERTANDINGAN.
- *
- * Untuk mendukung banyak pertandingan berjalan bersamaan, App.jsx sekarang me-render
- * komponen ini BERULANG (map atas activeMatchIds), masing-masing dengan matchId berbeda.
- * Setiap instance punya timer, state skor, dan commentary sendiri-sendiri — sepenuhnya
- * independen satu sama lain karena semua state (phase, currentMinute, dst) ada di dalam
- * komponen ini, bukan dibagi lewat variabel global/module-level manapun.
- *
- * Props:
- * - matchId: id pertandingan (wajib angka valid; parent hanya me-render instance ini
- *   kalau match tersebut memang sedang aktif).
- * - apiBaseUrl: base url backend.
- * - onLiveUpdate({ matchId, homeTeamId, awayTeamId, homeScore, awayScore, isFinal }):
- *     dipanggil setiap kali skor yang tampil di layar berubah, termasuk 0-0 di kick-off.
- * - onFinished(matchId): dipanggil sekali saat FULL_TIME, membawa matchId sendiri supaya
- *     parent tahu PERTANDINGAN MANA yang selesai (penting karena sekarang bisa ada banyak
- *     instance berjalan bersamaan).
- */
 const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => {
   const [phase, setPhase] = useState('idle');
   const [matchData, setMatchData] = useState(null);
@@ -77,6 +51,10 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
 
   const homeName = matchData?.result?.home_team_name || 'Tim Kandang';
   const awayName = matchData?.result?.away_team_name || 'Tim Tandang';
+  
+  // Tangkap formasi taktik dari AI Server
+  const homeFormation = matchData?.home_formation || '4-3-3';
+  const awayFormation = matchData?.away_formation || '4-3-3';
 
   const fetchMatch = useCallback(async (id) => {
     setPhase('loading');
@@ -84,8 +62,6 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
     try {
       const res = await fetch(`${apiBaseUrl}/api/matches/simulate/${id}`, { method: 'POST' });
       if (!res.ok) {
-        // Status 409 = match ini sudah FINISHED sebelumnya (dicegah backend agar stat
-        // pemain tidak dobel-tercatat). Tampilkan pesan yang jelas, bukan error generik.
         if (res.status === 409) {
           const body = await res.json().catch(() => null);
           throw new Error(body?.message || 'Pertandingan ini sudah selesai.');
@@ -115,7 +91,7 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       setErrorMsg(err.message || 'Gagal mengambil data pertandingan.');
       setPhase('error');
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, onLiveUpdate]);
 
   useEffect(() => {
     if (matchId === null || matchId === undefined) {
@@ -123,10 +99,7 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       return;
     }
     fetchMatch(matchId);
-    // Instance ini didedikasikan untuk satu matchId sepanjang hidupnya (parent me-render
-    // ulang list dengan key=matchId), jadi effect ini cukup jalan sekali di mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [matchId, fetchMatch]);
 
   useEffect(() => {
     if (phase !== 'first_half' && phase !== 'second_half') return undefined;
@@ -134,7 +107,6 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
     timerRef.current = setInterval(() => {
       setCurrentMinute((prev) => {
         const next = prev + 1;
-
         if (next === 45 && phase === 'first_half') {
           clearInterval(timerRef.current);
           setPhase('halftime');
@@ -158,9 +130,6 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
     return () => clearTimeout(t);
   }, [phase]);
 
-  // Saat FULL_TIME: kirim skor final (isFinal:true) lalu panggil onFinished(matchId) —
-  // matchId disertakan supaya parent tahu match spesifik mana yang harus dikeluarkan
-  // dari daftar "sedang berjalan", tanpa mengganggu match lain yang masih live.
   useEffect(() => {
     if (phase === 'full_time' && !finishedNotifiedRef.current) {
       finishedNotifiedRef.current = true;
@@ -174,8 +143,7 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       });
       onFinished?.(matchId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  }, [phase, matchId, matchData, liveScore, onLiveUpdate, onFinished]);
 
   useEffect(() => {
     if (!matchData?.timeline) return;
@@ -203,59 +171,39 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
         });
       }
     });
-  }, [currentMinute, matchData, homeName, awayName, matchId, onLiveUpdate]);
-
-  
+    
+    // Auto-scroll commentary box ke paling bawah
+    if (commentaryEndRef.current) {
+      commentaryEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentMinute, matchData, homeName, awayName, matchId, onLiveUpdate, liveScore]);
 
   if (matchId === null || matchId === undefined) return null;
 
   const displayMinute = phase === 'halftime' ? 45 : phase === 'full_time' ? 90 : currentMinute;
-  const clockLabel =
-    phase === 'halftime' ? 'JEDA BABAK 1' : phase === 'full_time' ? 'FULL TIME' : `${displayMinute}'`;
+  const clockLabel = phase === 'halftime' ? 'JEDA' : phase === 'full_time' ? 'FT' : `${displayMinute}'`;
 
   return (
     <div className="card" style={{ marginBottom: '16px' }}>
       <div className="card-h" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="g-name" style={{ fontSize: '14px' }}>
-          📺 {homeName} vs {awayName}
+          📺 LIVE SIMULATION ENGINE
         </span>
         {phase !== 'idle' && phase !== 'loading' && phase !== 'error' && (
-          <span
-            style={{
-              fontFamily: 'monospace',
-              fontWeight: 700,
-              color: '#E5C26A',
-              fontSize: '13px',
-              letterSpacing: '1px',
-            }}
-          >
-            {clockLabel}
-          </span>
+          <span className="live-clock-badge">{clockLabel}</span>
         )}
       </div>
 
       {phase === 'loading' && (
         <div style={{ padding: '0 15px 15px', color: '#9CB0A4', fontSize: '13px' }}>
-          Menyiapkan pertandingan...
+          Mengevaluasi taktik & menyiapkan pertandingan...
         </div>
       )}
 
       {phase === 'error' && (
-        <div style={{ padding: '0 15px 15px', color: '#E86A5C', fontSize: '13px' }}>
+        <div style={{ padding: '0 15px 15px', color: '#F87171', fontSize: '13px' }}>
           {errorMsg}{' '}
-          <button
-            type="button"
-            onClick={() => fetchMatch(matchId)}
-            style={{
-              marginLeft: '8px',
-              background: 'transparent',
-              border: '1px solid #E86A5C',
-              color: '#E86A5C',
-              borderRadius: '6px',
-              padding: '2px 8px',
-              cursor: 'pointer',
-            }}
-          >
+          <button type="button" onClick={() => fetchMatch(matchId)} className="btn-simulate-sidebar" style={{ marginLeft: '8px' }}>
             Coba lagi
           </button>
         </div>
@@ -263,59 +211,40 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
 
       {matchData && phase !== 'loading' && phase !== 'error' && (
         <div style={{ padding: '0 15px 15px' }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '14px',
-              margin: '4px 0 12px',
-              fontWeight: 700,
-            }}
-          >
-            <span style={{ color: '#ECEFE8', fontSize: '13px' }}>{homeName}</span>
-            <span
-              style={{
-                fontFamily: 'monospace',
-                fontSize: '22px',
-                color: '#E5C26A',
-                background: '#07110C',
-                padding: '3px 14px',
-                borderRadius: '8px',
-              }}
-            >
+          {/* PAPAN SKOR PLUS INDIKATOR TAKTIK FORMASI AI */}
+          <div className="scoreboard-wrapper">
+            <div className="team-score-block home-side">
+              <span className="team-name-text">{homeName}</span>
+              <span className="formation-sub-badge">🤖 {homeFormation}</span>
+            </div>
+            
+            <span className="score-box-digits">
               {liveScore.home} - {liveScore.away}
             </span>
-            <span style={{ color: '#ECEFE8', fontSize: '13px' }}>{awayName}</span>
+            
+            <div className="team-score-block away-side">
+              <span className="team-name-text">{awayName}</span>
+              <span className="formation-sub-badge">🤖 {awayFormation}</span>
+            </div>
           </div>
 
           {phase === 'halftime' && (
-            <div style={{ textAlign: 'center', color: '#9CB0A4', fontSize: '12px', marginBottom: '8px' }}>
-              Jeda babak pertama...
+            <div style={{ textAlign: 'center', color: '#9CB0A4', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' }}>
+              ⏸️ Jeda Babak Pertama — Manager sedang memberikan instruksi taktik baru...
             </div>
           )}
           {phase === 'full_time' && (
-            <div style={{ textAlign: 'center', color: '#34D399', fontSize: '12px', marginBottom: '8px' }}>
-              {matchData.message}
+            <div style={{ textAlign: 'center', color: '#34D399', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' }}>
+              🏁 {matchData.message}
             </div>
           )}
 
-          <div
-            style={{
-              background: '#07110C',
-              border: '1px solid var(--line-delicate)',
-              borderRadius: '10px',
-              padding: '10px 12px',
-              maxHeight: '160px',
-              overflowY: 'auto',
-              fontSize: '12px',
-              lineHeight: 1.6,
-            }}
-          >
-            {commentary.length === 0 && <div style={{ color: '#9CB0A4' }}>Menunggu kick-off...</div>}
+          {/* BOX TEKS COMMENTARY PERTANDINGAN */}
+          <div className="commentary-scroll-box">
+            {commentary.length === 0 && <div style={{ color: '#9CB0A4' }}>Menunggu peluit kick-off...</div>}
             {commentary.map((c) => (
-              <div key={c.id} style={{ color: c.type === 'GOAL' ? '#E5C26A' : '#ECEFE8', marginBottom: '4px' }}>
-                <span style={{ color: '#9CB0A4', fontFamily: 'monospace' }}>{c.minute}&apos; </span>
+              <div key={c.id} style={{ color: c.type === 'GOAL' ? '#E5C26A' : c.type.includes('KARTU') ? '#F87171' : '#ECEFE8', marginBottom: '6px' }}>
+                <span style={{ color: '#34D399', fontFamily: 'monospace', fontWeight: 'bold' }}>{c.minute}&apos; </span>
                 {c.text}
               </div>
             ))}
