@@ -60,25 +60,45 @@ function normalizePositionGroup(rawPosition) {
 }
 
 async function getStartingLineup(clubId) {
+    // Ambil semua pemain di klub tersebut, urutkan dari yang terjago
     const query = `
         SELECT id, name, position, overall_rating
         FROM players
         WHERE club_id = $1
         ORDER BY overall_rating DESC
-        LIMIT 11
     `;
     const result = await pool.query(query, [clubId]);
-    const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
 
-    return result.rows
-        .map(p => ({
-            id: p.id,
-            name: p.name,
-            position: p.position,
-            positionGroup: normalizePositionGroup(p.position),
-            overall_rating: p.overall_rating
-        }))
-        .sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
+    // Normalisasi posisi
+    const allPlayers = result.rows.map(p => ({
+        id: p.id,
+        name: p.name,
+        position: p.position,
+        positionGroup: normalizePositionGroup(p.position),
+        overall_rating: p.overall_rating
+    }));
+
+    const lineup = [];
+    const quotas = { GK: 1, DEF: 4, MID: 4, FWD: 2 }; // Kuota standar formasi seimbang
+
+    // Masukkan pemain terbaik sesuai kuota masing-masing posisi
+    for (const pos of ['GK', 'DEF', 'MID', 'FWD']) {
+        const posPlayers = allPlayers.filter(p => p.positionGroup === pos);
+        lineup.push(...posPlayers.slice(0, quotas[pos]));
+    }
+
+    // PENTING: Kalau ternyata formasi belum genap 11 orang (misal klub kekurangan bek)
+    // Tambal sisa slot dengan pemain OVR tertinggi yang belum terpilih
+    if (lineup.length < 11) {
+        const pickedIds = new Set(lineup.map(p => p.id));
+        const remainingPlayers = allPlayers.filter(p => !pickedIds.has(p.id));
+        const needed = 11 - lineup.length;
+        lineup.push(...remainingPlayers.slice(0, needed));
+    }
+
+    // Urutkan rapi dari Kiper sampai Striker
+    const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    return lineup.sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
 }
 
 async function persistPlayerStats(playerStats, homeLineup, awayLineup) {
@@ -118,8 +138,9 @@ function autoPickFormation(lineup) {
 
 function simulateFullMatch(home, away, homeLineup, awayLineup) {
     const BASE_GOALS = 1.35;
-    const homeLambda = BASE_GOALS * (Math.pow(home.att, 1.5) / Math.pow(away.def, 1.5)) * (home.ovr / away.ovr);
-    const awayLambda = BASE_GOALS * (Math.pow(away.att, 1.5) / Math.pow(home.def, 1.5)) * (away.ovr / home.ovr);
+    const EXP = 1.15;
+   const homeLambda = BASE_GOALS * (Math.pow(home.att, EXP) / Math.pow(away.def, EXP)) * (home.ovr / away.ovr);
+    const awayLambda = BASE_GOALS * (Math.pow(away.att, EXP) / Math.pow(home.def, EXP)) * (away.ovr / home.ovr);
 
     const totalHomeGoals = poissonRandom(homeLambda);
     const totalAwayGoals = poissonRandom(awayLambda);
@@ -252,14 +273,30 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             if (row.club_id === match.away_team_id) { away.ovr = parseFloat(row.team_ovr); away.att = parseFloat(row.team_attack); away.def = parseFloat(row.team_defense); }
         });
 
+        // ------------------ PERBAIKAN BUFF FORMASI (PAKAI PERSENTASE) ------------------
         const applyFormationBuffs = (stats) => {
             const f = stats.formation;
-            if (['4-3-3', '4-2-4', '3-4-3'].includes(f)) { stats.att += 4; stats.def -= 2; }
-            else if (['5-3-2', '5-4-1', '4-5-1'].includes(f)) { stats.att -= 2; stats.def += 5; }
-            else { stats.att += 2; stats.def += 3; }
+            // Bukannya ditambah flat, tapi dikali persentase supaya proporsional dengan rating asli
+            if (['4-3-3', '4-2-4', '3-4-3'].includes(f)) { 
+                stats.att *= 1.04; // Attack naik 4%
+                stats.def *= 0.98; // Defense turun 2%
+            }
+            else if (['5-3-2', '5-4-1', '4-5-1'].includes(f)) { 
+                stats.att *= 0.98; // Attack turun 2%
+                stats.def *= 1.05; // Defense naik 5%
+            }
+            else { 
+                stats.att *= 1.02; 
+                stats.def *= 1.02; // Formasi seimbang dapat buff merata 2%
+            }
         };
-        applyFormationBuffs(home); applyFormationBuffs(away);
-        home.att += 3; home.def += 2;
+        
+        applyFormationBuffs(home); 
+        applyFormationBuffs(away);
+        
+        // Home Advantage (Keuntungan Tuan Rumah): Naik 3% ATT dan 2% DEF
+        home.att *= 1.03; 
+        home.def *= 1.02;
 
         const checkCounter = (f1, f2) => {
             const attacking = ['4-3-3', '4-2-4', '3-4-3'];
@@ -271,10 +308,15 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             return false;
         };
 
-        if (checkCounter(home.formation, away.formation)) { home.ovr += 5; home.att += 4; }
-        else if (checkCounter(away.formation, home.formation)) { away.ovr += 5; away.att += 4; }
+        // Buff Counter Formasi: Naik 5% OVR dan 5% ATT (tidak lagi statis +5)
+        if (checkCounter(home.formation, away.formation)) { 
+            home.ovr *= 1.05; home.att *= 1.05; 
+        } else if (checkCounter(away.formation, home.formation)) { 
+            away.ovr *= 1.05; away.att *= 1.05; 
+        }
 
         const matchResult = simulateFullMatch(home, away, homeLineup, awayLineup);
+        // -------------------------------------------------------------------------------
 
         const updateQuery = `UPDATE matches SET home_score = $1, away_score = $2, status = 'FINISHED' WHERE id = $3 RETURNING *`;
         const result = await pool.query(updateQuery, [matchResult.finalHomeScore, matchResult.finalAwayScore, matchId]);
