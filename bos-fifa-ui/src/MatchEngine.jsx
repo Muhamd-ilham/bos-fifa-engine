@@ -48,15 +48,21 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
   const timerRef = useRef(null);
   const revealedMinutesRef = useRef(new Set());
   const finishedNotifiedRef = useRef(false);
+  
+  // 🔥 INI GEMBOKNYA: Mencegah React menembak API 2 kali berturut-turut
+  const fetchedMatchIdRef = useRef(null); 
 
   const homeName = matchData?.result?.home_team_name || 'Tim Kandang';
   const awayName = matchData?.result?.away_team_name || 'Tim Tandang';
-  
-  // Tangkap formasi taktik dari AI Server
   const homeFormation = matchData?.home_formation || '4-3-3';
   const awayFormation = matchData?.away_formation || '4-3-3';
 
-  const fetchMatch = useCallback(async (id) => {
+  // Tambahkan parameter isRetry biar tombol "Coba Lagi" tetap berfungsi
+  const fetchMatch = useCallback(async (id, isRetry = false) => {
+    // Kalau ID ini sudah pernah ditembak dan bukan karena di-klik "Coba Lagi", HENTIKAN!
+    if (fetchedMatchIdRef.current === id && !isRetry) return;
+    fetchedMatchIdRef.current = id; // Kunci gemboknya
+
     setPhase('loading');
     setErrorMsg('');
     try {
@@ -172,7 +178,6 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       }
     });
     
-    // Auto-scroll commentary box ke paling bawah
     if (commentaryEndRef.current) {
       commentaryEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -203,7 +208,8 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       {phase === 'error' && (
         <div style={{ padding: '0 15px 15px', color: '#F87171', fontSize: '13px' }}>
           {errorMsg}{' '}
-          <button type="button" onClick={() => fetchMatch(matchId)} className="btn-simulate-sidebar" style={{ marginLeft: '8px' }}>
+          {/* 🔥 Tambahkan flag `true` saat di-klik agar gembok terbuka */}
+          <button type="button" onClick={() => fetchMatch(matchId, true)} className="btn-simulate-sidebar" style={{ marginLeft: '8px' }}>
             Coba lagi
           </button>
         </div>
@@ -211,7 +217,6 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
 
       {matchData && phase !== 'loading' && phase !== 'error' && (
         <div style={{ padding: '0 15px 15px' }}>
-          {/* PAPAN SKOR PLUS INDIKATOR TAKTIK FORMASI AI */}
           <div className="scoreboard-wrapper">
             <div className="team-score-block home-side">
               <span className="team-name-text">{homeName}</span>
@@ -239,7 +244,6 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
             </div>
           )}
 
-          {/* BOX TEKS COMMENTARY PERTANDINGAN */}
           <div className="commentary-scroll-box">
             {commentary.length === 0 && <div style={{ color: '#9CB0A4' }}>Menunggu peluit kick-off...</div>}
             {commentary.map((c) => (
