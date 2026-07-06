@@ -29,6 +29,9 @@ function commentaryLine(event, homeName, awayName) {
       const who = event.playerName ? event.playerName : `pemain ${teamName}`;
       return `🟥 KARTU MERAH! ${who} (${teamName}) harus meninggalkan lapangan.`;
     }
+    case 'TACTIC_CHANGE':
+      return `🧠 PERUBAHAN TAKTIK! Pelatih ${teamName} bereaksi terhadap skor dengan merombak formasi menjadi ${event.newFormation}!`;  
+    }
     case 'FULL_TIME':
       return `Pertandingan selesai! Skor akhir ${event.score}.`;
     default:
