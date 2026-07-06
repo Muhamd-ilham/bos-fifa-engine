@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
+const { FORMATIONS, DEFAULT_FORMATION, isValidFormation, getFormation } = require('./formations');
 
 const app = express();
 app.use(cors());
@@ -214,15 +215,15 @@ function normalizePositionGroup(rawPosition) {
     return 'MID';
 }
 
-// Helper: ambil starting XI satu klub (+ id pemain, dibutuhkan untuk update stat ke DB),
-// urut GK -> DEF -> MID -> FWD biar gampang dipetakan ke formasi
-async function getStartingLineup(clubId) {
+// Ambil SEMUA pemain satu klub (bukan cuma 11), dipetakan + positionGroup, terurut
+// GK -> DEF -> MID -> FWD lalu overall_rating menurun. Dipakai oleh getStartingLineup
+// (ambil sub-set sesuai formasi) DAN oleh endpoint profil klub (tampilkan skuad penuh).
+async function getFullSquad(clubId) {
     const query = `
-        SELECT id, name, position, overall_rating
+        SELECT id, name, position, overall_rating, goals, assists, yellow_cards, red_cards
         FROM players
         WHERE club_id = $1
         ORDER BY overall_rating DESC
-        LIMIT 11
     `;
     const result = await pool.query(query, [clubId]);
     const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
@@ -233,9 +234,62 @@ async function getStartingLineup(clubId) {
             name: p.name,
             position: p.position,
             positionGroup: normalizePositionGroup(p.position),
-            overall_rating: p.overall_rating
+            overall_rating: p.overall_rating,
+            goals: p.goals,
+            assists: p.assists,
+            yellow_cards: p.yellow_cards,
+            red_cards: p.red_cards,
         }))
-        .sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
+        .sort((a, b) => {
+            if (groupOrder[a.positionGroup] !== groupOrder[b.positionGroup]) {
+                return groupOrder[a.positionGroup] - groupOrder[b.positionGroup];
+            }
+            return b.overall_rating - a.overall_rating;
+        });
+}
+
+// Helper: ambil starting XI satu klub SESUAI FORMASI klub tersebut (+ id pemain,
+// dibutuhkan untuk update stat ke DB). Untuk tiap grup posisi (GK/DEF/MID/FWD),
+// ambil N pemain terbaik (overall_rating tertinggi) sejumlah slot yang diminta
+// formasi. Kalau grup tertentu kekurangan pemain (skuad tipis), sisa slot yang
+// tidak terisi akan ditambal dari pemain grup lain yang overall_rating-nya
+// tertinggi (belum terpakai) supaya starting XI tetap genap 11 orang dan
+// simulasi/commentary tidak pernah menerima lineup < 11.
+// Urutan hasil akhir tetap GK -> DEF -> MID -> FWD biar gampang dipetakan ke formasi.
+async function getStartingLineup(clubId, formationCode) {
+    const squad = await getFullSquad(clubId);
+    const formation = getFormation(formationCode);
+    const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+
+    const byGroup = { GK: [], DEF: [], MID: [], FWD: [] };
+    squad.forEach((p) => byGroup[p.positionGroup].push(p));
+
+    const chosen = [];
+    const chosenIds = new Set();
+
+    ['GK', 'DEF', 'MID', 'FWD'].forEach((group) => {
+        const need = formation.slots[group] || 0;
+        const picks = byGroup[group].slice(0, need);
+        picks.forEach((p) => {
+            chosen.push(p);
+            chosenIds.add(p.id);
+        });
+    });
+
+    // Tambal kalau skuad kekurangan pemain di grup tertentu (mis. cuma 3 DEF padahal
+    // formasi butuh 5): ambil pemain terbaik yang belum terpilih, dari grup manapun.
+    const stillNeeded = 11 - chosen.length;
+    if (stillNeeded > 0) {
+        const remaining = squad
+            .filter((p) => !chosenIds.has(p.id))
+            .sort((a, b) => b.overall_rating - a.overall_rating);
+        remaining.slice(0, stillNeeded).forEach((p) => {
+            chosen.push(p);
+            chosenIds.add(p.id);
+        });
+    }
+
+    return chosen.sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
 }
 
 // Simpan akumulasi stat pemain (goals/assists/cards) hasil satu match ke DB secara permanen.
@@ -320,11 +374,34 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
         home.att += 3;
         home.def += 2;
 
-        // Ambil starting XI + nama klub kedua tim (untuk render 11v11, commentary, dan
-        // sekarang juga untuk assign gol/assist/kartu ke pemain spesifik)
+        // Ambil formasi tersimpan tiap klub (default '4-3-3' kalau klub belum pernah
+        // mengatur formasi / kolom formation NULL), lalu terapkan attackMod/defenseMod
+        // formasi tersebut ke team_attack/team_defense SEBELUM dipakai simulateFullMatch.
+        // Ini yang membuat formasi "beneran" berpengaruh ke hasil, bukan cuma kosmetik.
+        const clubFormationRes = await pool.query(
+            'SELECT id, formation FROM clubs WHERE id IN ($1, $2)',
+            [match.home_team_id, match.away_team_id]
+        );
+        const formationByClubId = {};
+        clubFormationRes.rows.forEach((c) => {
+            formationByClubId[c.id] = isValidFormation(c.formation) ? c.formation : DEFAULT_FORMATION;
+        });
+        const homeFormationCode = formationByClubId[match.home_team_id] || DEFAULT_FORMATION;
+        const awayFormationCode = formationByClubId[match.away_team_id] || DEFAULT_FORMATION;
+        const homeFormation = getFormation(homeFormationCode);
+        const awayFormation = getFormation(awayFormationCode);
+
+        home.att *= homeFormation.attackMod;
+        home.def *= homeFormation.defenseMod;
+        away.att *= awayFormation.attackMod;
+        away.def *= awayFormation.defenseMod;
+
+        // Ambil starting XI (sekarang sesuai slot formasi masing-masing klub) + nama klub
+        // kedua tim (untuk render 11v11, commentary, dan assign gol/assist/kartu ke pemain
+        // spesifik).
         const [homeLineup, awayLineup, clubNamesRes] = await Promise.all([
-            getStartingLineup(match.home_team_id),
-            getStartingLineup(match.away_team_id),
+            getStartingLineup(match.home_team_id, homeFormationCode),
+            getStartingLineup(match.away_team_id, awayFormationCode),
             pool.query('SELECT id, name FROM clubs WHERE id IN ($1, $2)', [match.home_team_id, match.away_team_id])
         ]);
 
@@ -356,6 +433,8 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             timeline: matchResult.timeline,
             home_lineup: homeLineup,
             away_lineup: awayLineup,
+            home_formation: homeFormationCode,
+            away_formation: awayFormationCode,
             debug_stats: { 
                 home_calculated: home, 
                 away_calculated: away,
@@ -414,6 +493,7 @@ app.get('/api/standings/:leagueId', async (req, res) => {
                 SELECT
                     c.id AS club_id,
                     c.name AS club,
+                    c.logo_url AS logo_url,
                     COUNT(m.id) AS played,
                     COALESCE(SUM(CASE WHEN (m.home_team_id = c.id AND m.home_score > m.away_score) OR (m.away_team_id = c.id AND m.away_score > m.home_score) THEN 1 ELSE 0 END), 0) AS won,
                     COALESCE(SUM(CASE WHEN m.home_score = m.away_score THEN 1 ELSE 0 END), 0) AS drawn,
@@ -425,12 +505,98 @@ app.get('/api/standings/:leagueId', async (req, res) => {
                 FROM clubs c
                 LEFT JOIN matches m ON (c.id = m.home_team_id OR c.id = m.away_team_id) AND m.status = 'FINISHED'
                 WHERE c.league_id = $1
-                GROUP BY c.id, c.name
+                GROUP BY c.id, c.name, c.logo_url
             ) sub
             ORDER BY points DESC, (goals_for - goals_against) DESC, goals_for DESC;
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// === ENDPOINT PROFIL KLUB (Skuad Lengkap + Logo + Formasi) ===
+// GET: detail satu klub -> dipakai halaman ClubProfile (skuad penuh, logo, formasi aktif).
+app.get('/api/clubs/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const clubRes = await pool.query(
+            'SELECT id, name, logo_url, formation, league_id FROM clubs WHERE id = $1',
+            [id]
+        );
+        const club = clubRes.rows[0];
+        if (!club) return res.status(404).json({ message: 'Klub tidak ditemukan!' });
+
+        const squad = await getFullSquad(id);
+        const formationCode = isValidFormation(club.formation) ? club.formation : DEFAULT_FORMATION;
+
+        // Sertakan starting XI hasil formasi saat ini juga, supaya halaman profil bisa
+        // menyorot 11 pemain yang akan diturunkan tanpa perlu hitung ulang di frontend.
+        const startingXI = await getStartingLineup(id, formationCode);
+        const startingIds = new Set(startingXI.map((p) => p.id));
+
+        res.json({
+            id: club.id,
+            name: club.name,
+            logo_url: club.logo_url,
+            league_id: club.league_id,
+            formation: formationCode,
+            available_formations: Object.entries(FORMATIONS).map(([code, f]) => ({ code, label: f.label, slots: f.slots })),
+            squad: squad.map((p) => ({ ...p, is_starting: startingIds.has(p.id) })),
+            starting_xi: startingXI,
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// PUT: update logo_url klub. Logo dimasukkan manual oleh user lewat URL (tidak ada upload
+// file di sisi backend), jadi endpoint ini cuma nyimpen string URL apa adanya.
+app.put('/api/clubs/:id/logo', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { logo_url } = req.body;
+
+        if (typeof logo_url !== 'string') {
+            return res.status(400).json({ message: 'logo_url wajib berupa string.' });
+        }
+
+        const result = await pool.query(
+            'UPDATE clubs SET logo_url = $1 WHERE id = $2 RETURNING id, name, logo_url',
+            [logo_url.trim(), id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ message: 'Klub tidak ditemukan!' });
+
+        res.json({ message: 'Logo klub berhasil diperbarui.', club: result.rows[0] });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// PUT: update formasi klub. Formasi ini yang dipakai getStartingLineup() setiap kali
+// klub ini bertanding (baik jadi home maupun away) sampai diganti lagi lewat endpoint ini.
+app.put('/api/clubs/:id/formation', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { formation } = req.body;
+
+        if (!isValidFormation(formation)) {
+            return res.status(400).json({
+                message: `Formasi tidak valid. Pilihan: ${Object.keys(FORMATIONS).join(', ')}`,
+            });
+        }
+
+        const result = await pool.query(
+            'UPDATE clubs SET formation = $1 WHERE id = $2 RETURNING id, name, formation',
+            [formation, id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ message: 'Klub tidak ditemukan!' });
+
+        res.json({ message: `Formasi berhasil diubah ke ${formation}.`, club: result.rows[0] });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -582,8 +748,21 @@ app.post('/api/schedule/generate/:leagueId', async (req, res) => {
     }
 });
 
+// Amankan skema: pastikan kolom logo_url & formation ada di tabel clubs saat server start,
+// jadi tidak perlu migration manual terpisah. Aman dijalankan berkali-kali (IF NOT EXISTS).
+async function ensureSchema() {
+    try {
+        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_url TEXT`);
+        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS formation VARCHAR(10) DEFAULT '${DEFAULT_FORMATION}'`);
+        console.log('✅ Skema clubs (logo_url, formation) siap.');
+    } catch (err) {
+        console.error('Gagal memastikan skema clubs:', err.message);
+    }
+}
+
 // 🔥 MENGGUNAKAN PORT OTOMATIS DARI CLOUD & BINDING KE '0.0.0.0'
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
+    await ensureSchema();
     console.log(`🔥 Server Bos FIFA ENGINE sudah LIVE di port ${PORT}`);
 });
