@@ -270,13 +270,19 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
         const match = matchRes.rows[0];
 
         if (!match) return res.status(404).json({ message: "Pertandingan tidak ditemukan!" });
-
-        // Cegah simulasi dobel: kalau match ini SUDAH FINISHED, jangan hitung ulang & jangan
-        // tambah stat pemain lagi (kalau tidak, refresh/replay akan menggandakan gol di DB).
         if (match.status === 'FINISHED') {
-            return res.status(409).json({ message: "Pertandingan ini sudah selesai dan tidak bisa disimulasikan ulang." });
+            return res.status(409).json({ message: "Pertandingan ini sudah selesai." });
         }
 
+        // 1. AMBIL FORMASI DAN DATA KLUB DARI DATABASE
+        const clubNamesRes = await pool.query('SELECT id, name, formation FROM clubs WHERE id IN ($1, $2)', [match.home_team_id, match.away_team_id]);
+        const clubDataMap = {};
+        clubNamesRes.rows.forEach(c => { clubDataMap[c.id] = c; });
+
+        const homeClub = clubDataMap[match.home_team_id] || { name: 'Home', formation: '4-3-3' };
+        const awayClub = clubDataMap[match.away_team_id] || { name: 'Away', formation: '4-3-3' };
+
+        // 2. HITUNG KEKUATAN BASE BERDASARKAN 11 PEMAIN TOP (STARTING XI)
         const strengthQuery = `
             WITH ranked_players AS (
                 SELECT 
@@ -301,8 +307,8 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
         
         const strengthRes = await pool.query(strengthQuery, [match.home_team_id, match.away_team_id]);
 
-        let home = { ovr: 70, att: 70, def: 70 };
-        let away = { ovr: 70, att: 70, def: 70 };
+        let home = { ovr: 70, att: 70, def: 70, formation: homeClub.formation || '4-3-3' };
+        let away = { ovr: 70, att: 70, def: 70, formation: awayClub.formation || '4-3-3' };
 
         strengthRes.rows.forEach(row => {
             if (row.club_id === match.home_team_id) {
@@ -317,21 +323,46 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             }
         });
 
+        // 3. MACHINE LEARNING ENGINE: MODIFIER STRATEGI FORMASI
+        // Setiap formasi memberikan efek buff/nerf pada lini serang atau bertahan
+        const applyFormationBuffs = (stats) => {
+            if (stats.formation === '4-3-3') { stats.att += 4; stats.def -= 2; }
+            if (stats.formation === '5-3-2') { stats.att -= 2; stats.def += 5; }
+            if (stats.formation === '4-4-2') { stats.att += 2; stats.def += 2; }
+            if (stats.formation === '3-5-2') { stats.att += 3; stats.def += 1; stats.ovr += 1; }
+            if (stats.formation === '4-2-3-1') { stats.att += 2; stats.def += 3; }
+        };
+        applyFormationBuffs(home);
+        applyFormationBuffs(away);
+
+        // BONUS KEUNTUNGAN KANDANG (HOME ADVANTAGE)
         home.att += 3;
         home.def += 2;
 
-        // Ambil starting XI + nama klub kedua tim (untuk render 11v11, commentary, dan
-        // sekarang juga untuk assign gol/assist/kartu ke pemain spesifik)
-        const [homeLineup, awayLineup, clubNamesRes] = await Promise.all([
+        // 4. DECISION MATRIX: COUNTER FORMASI (AI INTELLIGENCE)
+        // Logika evaluasi taktik saling mengalahkan (Rock-Paper-Scissors Style)
+        const checkCounter = (f1, f2) => {
+            if (f1 === '4-3-3' && f2 === '5-3-2') return true;  // Sayap cepat membongkar bek menumpuk
+            if (f1 === '5-3-2' && f2 === '4-4-2') return true;  // Pertahanan rapat meredam duet striker klasik
+            if (f1 === '4-4-2' && f2 === '4-2-3-1') return true; // Keunggulan lebar lapangan melelahkan taktik sempit
+            if (f1 === '4-2-3-1' && f2 === '3-5-2') return true; // Overload lini tengah memutus serangan balik 3 bek
+            if (f1 === '3-5-2' && f2 === '4-3-3') return true;  // Penguasaan bola tengah mematikan aliran bola ke sayap
+            return false;
+        };
+
+        if (checkCounter(home.formation, away.formation)) {
+            home.ovr += 4; home.att += 3; // Home berhasil counter taktik Away
+        } else if (checkCounter(away.formation, home.formation)) {
+            away.ovr += 4; away.att += 3; // Away berhasil counter taktik Home
+        }
+
+        // Ambil data lineup pemain untuk match events
+        const [homeLineup, awayLineup] = await Promise.all([
             getStartingLineup(match.home_team_id),
-            getStartingLineup(match.away_team_id),
-            pool.query('SELECT id, name FROM clubs WHERE id IN ($1, $2)', [match.home_team_id, match.away_team_id])
+            getStartingLineup(match.away_team_id)
         ]);
 
-        const clubNameById = {};
-        clubNamesRes.rows.forEach(c => { clubNameById[c.id] = c.name; });
-
-        // Simulasi full match dengan timeline per-menit (sekarang termasuk nama pemain per event)
+        // Jalankan Simulasi Engine Matematika Poisson
         const matchResult = simulateFullMatch(home, away, homeLineup, awayLineup);
 
         const updateQuery = `
@@ -340,28 +371,20 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             WHERE id = $3 RETURNING *
         `;
         const result = await pool.query(updateQuery, [matchResult.finalHomeScore, matchResult.finalAwayScore, matchId]);
-
-        // Simpan akumulasi gol/assist/kartu pemain ke DB SEKALI di sini, tepat setelah status
-        // match resmi FINISHED — bukan di frontend, supaya tidak mungkin dobel-hitung akibat
-        // multiple onFinished callback atau reconnect.
         await persistPlayerStats(matchResult.playerStats, homeLineup, awayLineup);
         
         res.json({ 
             message: `Peluit panjang! Skor akhir ${matchResult.finalHomeScore}-${matchResult.finalAwayScore}.`, 
             result: {
                 ...result.rows[0],
-                home_team_name: clubNameById[match.home_team_id] || 'Tim Kandang',
-                away_team_name: clubNameById[match.away_team_id] || 'Tim Tandang'
+                home_team_name: homeClub.name,
+                away_team_name: awayClub.name
             },
             timeline: matchResult.timeline,
             home_lineup: homeLineup,
             away_lineup: awayLineup,
-            debug_stats: { 
-                home_calculated: home, 
-                away_calculated: away,
-                home_lambda: matchResult.lambdas.home,
-                away_lambda: matchResult.lambdas.away
-            }
+            home_formation: home.formation, // Kirim ke frontend untuk info taktik
+            away_formation: away.formation
         });
     } catch (err) {
         console.error(err.message);
