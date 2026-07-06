@@ -393,12 +393,11 @@ app.get('/api/players/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
         const query = `
-            SELECT p.name, p.position, p.overall_rating, c.name AS club 
+            SELECT p.id, p.name, p.position, p.overall_rating, p.club_id, c.name AS club 
             FROM players p
             JOIN clubs c ON p.club_id = c.id
             WHERE c.league_id = $1
             ORDER BY p.overall_rating DESC
-            LIMIT 20
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
