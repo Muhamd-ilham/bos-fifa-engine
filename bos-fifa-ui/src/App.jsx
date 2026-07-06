@@ -568,32 +568,20 @@ function App() {
           </div>
         )}
 
-        {/* ISI TAB: STRATEGY */}
-        {/* ISI TAB: STRATEGY (AI MANAGER) */}
+       {/* ISI TAB: STRATEGY (FULL AUTONOMOUS AI MANAGER) */}
         {clubTab === 'strategy' && (
-          <div className="card" style={{ padding: '40px 20px', textAlign: 'center' }}>
-            <h3 style={{ marginBottom: '10px', color: '#ECEFE8', fontSize: '22px' }}>🤖 Ruang Manajer AI</h3>
-            <p style={{ color: '#9CB0A4', fontSize: '14px', marginBottom: '30px', lineHeight: '1.6', maxWidth: '600px', margin: '0 auto 30px' }}>
-              Anda tidak perlu repot mengatur formasi! Manajer AI kami akan secara cerdas menganalisis kekuatan rata-rata pemain Anda, meracik taktik, dan menerapkan strategi <b>Batu-Gunting-Kertas</b> (Menyerang {'>'} Bertahan {'>'} Penguasaan) secara dinamis saat bertanding!
-            </p>
+          <div className="card" style={{ padding: '50px 20px', textAlign: 'center' }}>
+            <h3 style={{ marginBottom: '10px', color: '#ECEFE8', fontSize: '24px' }}>🧠 FULL AUTONOMOUS AI MANAGER</h3>
             
-            <div style={{ background: '#07110C', padding: '25px', borderRadius: '15px', border: '1px solid var(--line-delicate)', display: 'inline-block', minWidth: '300px' }}>
-              <p style={{ color: '#E5C26A', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '5px' }}>FORMASI PILIHAN AI SAAT INI:</p>
-              <div style={{ fontSize: '56px', fontWeight: '900', color: '#ECEFE8', letterSpacing: '5px', textShadow: '0 4px 15px rgba(229,194,106,0.2)' }}>
-                {clubInfo.formation || '4-4-2'}
-              </div>
+            <div style={{ background: '#0C1A12', border: '1px solid #34D399', padding: '15px 25px', borderRadius: '12px', display: 'inline-block', margin: '20px auto', boxShadow: '0 0 20px rgba(52,211,153,0.1)' }}>
+              <span style={{ color: '#34D399', fontWeight: 'bold', fontSize: '15px' }}>● STATUS: KENDALI PENUH OLEH AI</span>
             </div>
 
-            <div style={{ marginTop: '35px', display: 'flex', justifyContent: 'center' }}>
-              <button 
-                onClick={autoGenerateFormation}
-                style={{ background: '#34D399', color: '#07110C', border: 'none', padding: '14px 28px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', transition: '0.2s', boxShadow: '0 4px 15px rgba(52,211,153,0.3)' }}
-                onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
-                onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
-              >
-                🧠 Suruh AI Analisis Skuad Sekarang
-              </button>
-            </div>
+            <p style={{ color: '#9CB0A4', fontSize: '14px', lineHeight: '1.8', maxWidth: '600px', margin: '0 auto' }}>
+              Sebagai Presiden FIFA, Anda <b>TIDAK PERLU</b> mengatur taktik. <br/><br/>
+              Klub ini sepenuhnya dilatih oleh <b>Manajer AI</b>. Sebelum setiap pertandingan (Kick-off), AI akan menyeleksi 11 pemain dengan OVR tertinggi dan otomatis memilih formasi terbaik (Menyerang, Bertahan, atau Penguasaan).<br/><br/>
+              Hebatnya lagi, AI akan memantau skor secara langsung! Jika klub tertinggal di babak pertama, AI akan merombak formasi menjadi Ultra Menyerang (3-4-3). Jika unggul di menit 75, AI akan menginstruksikan Parkir Bus (5-4-1) demi mengamankan kemenangan!
+            </p>
           </div>
         )}
       </div>
