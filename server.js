@@ -405,6 +405,34 @@ app.get('/api/players/:leagueId', async (req, res) => {
     } catch (err) { res.status(500).send('Server Error'); }
 });
 
+app.get('/api/clubs/:id', async (req, res) => {
+    try {
+        // Otomatis bikin kolom kalau belum ada di DB (Jalur Ninja)
+        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_url TEXT DEFAULT ''`);
+        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS formation VARCHAR(50) DEFAULT '4-3-3'`);
+        
+        const result = await pool.query('SELECT * FROM clubs WHERE id = $1', [req.params.id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// 2. Update Logo & Formasi Klub
+app.put('/api/clubs/:id', async (req, res) => {
+    try {
+        const { logo_url, formation } = req.body;
+        await pool.query(
+            'UPDATE clubs SET logo_url = $1, formation = $2 WHERE id = $3',
+            [logo_url, formation, req.params.id]
+        );
+        res.json({ message: 'Profil Klub Berhasil Diperbarui!' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
  
 app.get('/api/standings/:leagueId', async (req, res) => {
     try {
