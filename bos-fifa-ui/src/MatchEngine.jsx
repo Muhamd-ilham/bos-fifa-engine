@@ -55,8 +55,7 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
   // 🔥 INI GEMBOKNYA: Mencegah React menembak API 2 kali berturut-turut
   const fetchedMatchIdRef = useRef(null); 
 
-  const homeName = matchData?.result?.home_team_name || 'Tim Kandang';
-  const awayName = matchData?.result?.away_team_name || 'Tim Tandang';
+ const [liveFormations, setLiveFormations] = useState({ home: '...', away: '...' });
   const homeFormation = matchData?.home_formation || '4-3-3';
   const awayFormation = matchData?.away_formation || '4-3-3';
 
@@ -166,6 +165,15 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       if (line) {
         setCommentary((prev) => [...prev, { id: key, minute: event.minute, text: line, type: event.type }]);
       }
+      
+      // 🔥 UPDATE FORMASI DI PAPAN SKOR SECARA LIVE
+      if (event.type === 'TACTIC_CHANGE') {
+        setLiveFormations(prev => ({
+          ...prev,
+          [event.team === 'HOME' ? 'home' : 'away']: event.newFormation
+        }));
+      }
+      
       if (event.type === 'GOAL') {
         const [h, a] = event.score.split('-').map(Number);
         setLiveScore({ home: h, away: a });
