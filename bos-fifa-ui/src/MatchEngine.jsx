@@ -178,9 +178,9 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
       }
     });
     
-    if (commentaryEndRef.current) {
-      commentaryEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    // 🔥 KODE AUTO-SCROLL SUDAH DIHAPUS DARI SINI
+    // Jadi layar nggak akan narik paksa ke bawah lagi!
+
   }, [currentMinute, matchData, homeName, awayName, matchId, onLiveUpdate, liveScore]);
 
   if (matchId === null || matchId === undefined) return null;
@@ -252,7 +252,7 @@ const MatchEngine = ({ matchId, apiBaseUrl = '', onLiveUpdate, onFinished }) => 
                 {c.text}
               </div>
             ))}
-            <div ref={commentaryEndRef} />
+           
           </div>
         </div>
       )}
