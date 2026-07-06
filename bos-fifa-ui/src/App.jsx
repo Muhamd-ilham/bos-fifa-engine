@@ -123,15 +123,28 @@ function App() {
 
   // State untuk Modal Tambah/Edit Pemain
   const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
-  const [playerForm, setPlayerForm] = useState({ id: null, name: '', position: 'CM', overall_rating: 70 });
+ // 1. Tambahkan state default untuk SHT, PAS, DEF
+  const [playerForm, setPlayerForm] = useState({ 
+      id: null, name: '', position: 'CM', 
+      overall_rating: 70, shooting: 70, passing: 70, defending: 70 
+  });
 
   const openAddPlayerModal = () => {
-    setPlayerForm({ id: null, name: '', position: 'CM', overall_rating: 70 });
+    setPlayerForm({ 
+        id: null, name: '', position: 'CM', 
+        overall_rating: 70, shooting: 70, passing: 70, defending: 70 
+    });
     setIsPlayerModalOpen(true);
   };
 
   const openEditPlayerModal = (player) => {
-    setPlayerForm({ id: player.id, name: player.name, position: player.position, overall_rating: player.overall_rating });
+    setPlayerForm({ 
+        id: player.id, name: player.name, position: player.position, 
+        overall_rating: player.overall_rating,
+        shooting: player.shooting || 70, 
+        passing: player.passing || 70, 
+        defending: player.defending || 70 
+    });
     setIsPlayerModalOpen(true);
   };
 
@@ -519,19 +532,28 @@ function App() {
             </div>
             <div className="table-responsive" style={{ padding: '12px' }}>
               <table className="player-table">
+              {/* Bagian Table Header */}
                 <thead>
                   <tr>
                     <th>Nama Pemain</th>
                     <th>Posisi</th>
+                    <th style={{ textAlign: 'center' }}>SHT</th>
+                    <th style={{ textAlign: 'center' }}>PAS</th>
+                    <th style={{ textAlign: 'center' }}>DEF</th>
                     <th style={{ textAlign: 'center' }}>OVR</th>
                     <th style={{ textAlign: 'center' }}>Aksi</th>
                   </tr>
                 </thead>
+                
+              {/* Bagian Table Body */}
                 <tbody>
                   {clubPlayers.map((p, idx) => (
                     <tr key={idx}>
                       <td className="club-name-col" style={{ fontWeight: 'bold', color: '#ECEFE8' }}>{p.name}</td>
                       <td><span className="badge">{p.position}</span></td>
+                      <td style={{ textAlign: 'center', color: '#9CB0A4' }}>{p.shooting || '-'}</td>
+                      <td style={{ textAlign: 'center', color: '#9CB0A4' }}>{p.passing || '-'}</td>
+                      <td style={{ textAlign: 'center', color: '#9CB0A4' }}>{p.defending || '-'}</td>
                       <td className="pts" style={{ color: '#E5C26A', fontSize: '15px' }}>{p.overall_rating}</td>
                       <td style={{ textAlign: 'center' }}>
                         <button className="btn-action-edit" onClick={() => openEditPlayerModal(p)}>✎</button>
@@ -673,6 +695,27 @@ function App() {
             <div className="form-group">
               <label>Overall Rating (OVR)</label>
               <input type="number" min="40" max="99" value={playerForm.overall_rating} onChange={(e) => setPlayerForm({...playerForm, overall_rating: e.target.value})} />
+            </div>
+
+            <div className="form-group">
+              <label>Overall Rating (OVR)</label>
+              <input type="number" min="40" max="99" value={playerForm.overall_rating} onChange={(e) => setPlayerForm({...playerForm, overall_rating: e.target.value})} />
+            </div>
+
+            {/* ---> TAMBAHKAN BLOK INPUT STATISTIK BARU DI SINI <--- */}
+            <div className="form-group" style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label>SHT</label>
+                <input type="number" min="1" max="99" value={playerForm.shooting} onChange={(e) => setPlayerForm({...playerForm, shooting: e.target.value})} placeholder="Shooting" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label>PAS</label>
+                <input type="number" min="1" max="99" value={playerForm.passing} onChange={(e) => setPlayerForm({...playerForm, passing: e.target.value})} placeholder="Passing" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label>DEF</label>
+                <input type="number" min="1" max="99" value={playerForm.defending} onChange={(e) => setPlayerForm({...playerForm, defending: e.target.value})} placeholder="Defending" />
+              </div>
             </div>
 
             <div className="modal-actions">
