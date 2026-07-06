@@ -443,3 +443,243 @@ td { padding: 12px 10px; border-bottom: 1px solid var(--bg-soft); white-space: n
   align-items: center;
   gap: 5px;
 }
+
+
+/* =========================================================
+   TAMBAHAN: Logo klub mini (klasemen) + Halaman Profil Klub
+   Import file ini di App.jsx: import './club-profile.css';
+   ========================================================= */
+
+/* --- Logo klub mini, dipakai di baris klasemen --- */
+.club-name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.club-name-link:hover { color: #E5C26A; text-decoration: underline; }
+
+.club-logo-mini {
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-soft);
+  border: 1px solid var(--line-delicate);
+}
+
+.club-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--ink-medium);
+  font-weight: 800;
+  flex-shrink: 0;
+  border: 1px solid var(--line-delicate);
+}
+
+/* --- Halaman Profil Klub --- */
+.club-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.btn-back-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: var(--bg-input);
+  color: var(--ink-dark);
+  border: 1px solid var(--line-delicate);
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-back-profile:hover { background: var(--bg-soft); }
+
+.club-header-card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.club-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.club-logo-box {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line-delicate);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.club-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+
+.club-logo-placeholder {
+  color: var(--ink-light);
+}
+
+.club-header-name {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink-dark);
+}
+
+.club-header-sub {
+  font-size: 12.5px;
+  color: var(--ink-medium);
+}
+
+.logo-form {
+  border-top: 1px solid var(--line-delicate);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.logo-form-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.logo-form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.logo-url-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--line-delicate);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--ink-dark);
+  font-size: 13px;
+  outline: none;
+}
+.logo-url-input:focus { border-color: var(--accent-gold); }
+
+.form-feedback-msg {
+  font-size: 12px;
+  color: var(--accent-success);
+}
+
+/* --- Chip pilihan formasi --- */
+.formation-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.formation-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--line-delicate);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  min-width: 118px;
+  transition: all 0.15s;
+}
+.formation-chip:hover { border-color: var(--accent-gold); transform: translateY(-1px); }
+.formation-chip:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.formation-chip-active {
+  background: var(--row-gold-bg);
+  border-color: var(--accent-gold);
+}
+
+.formation-chip-code {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-gold);
+}
+
+.formation-chip-label {
+  font-size: 10.5px;
+  color: var(--ink-medium);
+}
+
+/* --- Skuad dikelompokkan per posisi --- */
+.squad-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-medium);
+  font-weight: 600;
+}
+
+.squad-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  flex-shrink: 0;
+}
+
+.squad-legend-dot.inline-dot {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.squad-group {
+  margin-bottom: 18px;
+}
+.squad-group:last-child { margin-bottom: 0; }
+
+.squad-group-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 4px 6px;
+}
+
+@media (max-width: 480px) {
+  .club-header-inner { gap: 12px; }
+  .club-logo-box { width: 56px; height: 56px; border-radius: 14px; }
+  .club-header-name { font-size: 18px; }
+  .logo-form-row { flex-direction: column; }
+  .formation-chip { min-width: 100px; padding: 8px 10px; }
+}
