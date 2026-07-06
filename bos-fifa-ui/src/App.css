@@ -554,3 +554,94 @@ td { padding: 12px 10px; border-bottom: 1px solid var(--bg-soft); white-space: n
   background: var(--accent-gold);
   border-radius: 3px;
 }
+
+/* =========================================
+   STYLE MODAL & TOMBOL AKSI PEMAIN
+========================================= */
+.btn-action-edit, .btn-action-delete {
+  background: var(--bg-soft);
+  border: 1px solid var(--line-delicate);
+  color: var(--ink-dark);
+  padding: 5px 10px;
+  border-radius: 6px;
+  margin: 0 4px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.btn-action-edit:hover { background: var(--accent-blue); color: #000; border-color: var(--accent-blue); }
+.btn-action-delete:hover { background: var(--accent-danger); color: #000; border-color: var(--accent-danger); }
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(7, 17, 12, 0.85);
+  backdrop-filter: blur(5px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-box {
+  background: var(--bg-card);
+  padding: 30px;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 400px;
+  border: 1px solid var(--line-delicate);
+  box-shadow: var(--shadow-float);
+}
+
+.form-group {
+  margin-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  color: var(--ink-medium);
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.form-group input, .form-group select {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--accent-gold);
+  border: 1px solid var(--line-delicate);
+  font-family: inherit;
+  font-weight: bold;
+  outline: none;
+}
+.form-group input:focus, .form-group select:focus {
+  border-color: var(--accent-gold);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 25px;
+}
+
+.btn-cancel {
+  background: var(--bg-soft);
+  color: var(--ink-medium);
+  border: 1px solid var(--line-delicate);
+  padding: 10px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.btn-save {
+  background: var(--accent-gold);
+  color: #07110C;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
