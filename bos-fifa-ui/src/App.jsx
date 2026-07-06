@@ -697,10 +697,7 @@ function App() {
               <input type="number" min="40" max="99" value={playerForm.overall_rating} onChange={(e) => setPlayerForm({...playerForm, overall_rating: e.target.value})} />
             </div>
 
-            <div className="form-group">
-              <label>Overall Rating (OVR)</label>
-              <input type="number" min="40" max="99" value={playerForm.overall_rating} onChange={(e) => setPlayerForm({...playerForm, overall_rating: e.target.value})} />
-            </div>
+           
 
             {/* ---> TAMBAHKAN BLOK INPUT STATISTIK BARU DI SINI <--- */}
             <div className="form-group" style={{ display: 'flex', gap: '10px' }}>
