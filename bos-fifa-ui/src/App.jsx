@@ -280,6 +280,13 @@ function App() {
     });
   };
 
+  const autoGenerateFormation = async () => {
+    const res = await fetch(`${API_BASE}/api/clubs/${selectedClubId}/auto-formation`, { method: 'PUT' });
+    const data = await res.json();
+    setClubInfo({ ...clubInfo, formation: data.formation });
+    alert(`💡 HASIL ANALISIS AI MANAJER:\n\n"${data.message}"\n\nFormasi Terkini: ${data.formation}`);
+  };
+
   const handleEditLogo = () => {
     const url = prompt("Masukkan Link/URL Gambar Logo Klub (Berakhir dengan .png / .jpg):", clubInfo.logo_url);
     if (url !== null) updateClubInfo('logo_url', url);
@@ -562,24 +569,33 @@ function App() {
         )}
 
         {/* ISI TAB: STRATEGY */}
+        {/* ISI TAB: STRATEGY (AI MANAGER) */}
         {clubTab === 'strategy' && (
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ marginBottom: '15px', color: '#ECEFE8' }}>Formasi Saat Ini:</h3>
-            <select 
-              value={clubInfo.formation} 
-              onChange={(e) => updateClubInfo('formation', e.target.value)}
-              style={{ padding: '10px', background: '#11211A', color: '#E5C26A', border: '1px solid #1B2C22', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold' }}
-            >
-              <option value="4-3-3">4-3-3 Attacking</option>
-              <option value="4-4-2">4-4-2 Classic</option>
-              <option value="3-5-2">3-5-2 Balance</option>
-              <option value="5-3-2">5-3-2 Defensive</option>
-              <option value="4-2-3-1">4-2-3-1 Control</option>
-            </select>
-            <p style={{ marginTop: '20px', fontSize: '13px', color: '#9CB0A4' }}>*Formasi otomatis tersimpan ke Database saat dipilih.</p>
+          <div className="card" style={{ padding: '40px 20px', textAlign: 'center' }}>
+            <h3 style={{ marginBottom: '10px', color: '#ECEFE8', fontSize: '22px' }}>🤖 Ruang Manajer AI</h3>
+            <p style={{ color: '#9CB0A4', fontSize: '14px', marginBottom: '30px', lineHeight: '1.6', maxWidth: '600px', margin: '0 auto 30px' }}>
+              Anda tidak perlu repot mengatur formasi! Manajer AI kami akan secara cerdas menganalisis kekuatan rata-rata pemain Anda, meracik taktik, dan menerapkan strategi <b>Batu-Gunting-Kertas</b> (Menyerang {'>'} Bertahan {'>'} Penguasaan) secara dinamis saat bertanding!
+            </p>
+            
+            <div style={{ background: '#07110C', padding: '25px', borderRadius: '15px', border: '1px solid var(--line-delicate)', display: 'inline-block', minWidth: '300px' }}>
+              <p style={{ color: '#E5C26A', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '5px' }}>FORMASI PILIHAN AI SAAT INI:</p>
+              <div style={{ fontSize: '56px', fontWeight: '900', color: '#ECEFE8', letterSpacing: '5px', textShadow: '0 4px 15px rgba(229,194,106,0.2)' }}>
+                {clubInfo.formation || '4-4-2'}
+              </div>
+            </div>
+
+            <div style={{ marginTop: '35px', display: 'flex', justifyContent: 'center' }}>
+              <button 
+                onClick={autoGenerateFormation}
+                style={{ background: '#34D399', color: '#07110C', border: 'none', padding: '14px 28px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', transition: '0.2s', boxShadow: '0 4px 15px rgba(52,211,153,0.3)' }}
+                onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+                onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+              >
+                🧠 Suruh AI Analisis Skuad Sekarang
+              </button>
+            </div>
           </div>
         )}
-
       </div>
     );
   };
