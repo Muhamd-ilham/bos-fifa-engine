@@ -325,12 +325,19 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
 
         // 3. MACHINE LEARNING ENGINE: MODIFIER STRATEGI FORMASI
         // Setiap formasi memberikan efek buff/nerf pada lini serang atau bertahan
+        // 3. MACHINE LEARNING ENGINE: MODIFIER STRATEGI FORMASI (10+ Formasi)
         const applyFormationBuffs = (stats) => {
-            if (stats.formation === '4-3-3') { stats.att += 4; stats.def -= 2; }
-            if (stats.formation === '5-3-2') { stats.att -= 2; stats.def += 5; }
-            if (stats.formation === '4-4-2') { stats.att += 2; stats.def += 2; }
-            if (stats.formation === '3-5-2') { stats.att += 3; stats.def += 1; stats.ovr += 1; }
-            if (stats.formation === '4-2-3-1') { stats.att += 2; stats.def += 3; }
+            const f = stats.formation;
+            if (f === '4-3-3') { stats.att += 4; stats.def -= 2; }
+            else if (f === '5-3-2') { stats.att -= 2; stats.def += 5; }
+            else if (f === '4-4-2') { stats.att += 2; stats.def += 2; }
+            else if (f === '3-5-2') { stats.att += 3; stats.def += 1; stats.ovr += 1; }
+            else if (f === '4-2-3-1') { stats.att += 2; stats.def += 3; }
+            else if (f === '3-4-3') { stats.att += 5; stats.def -= 3; }
+            else if (f === '5-4-1') { stats.att -= 3; stats.def += 6; }
+            else if (f === '4-2-4') { stats.att += 6; stats.def -= 4; }
+            else if (f === '4-5-1') { stats.att += 1; stats.def += 4; }
+            else if (f === '4-1-4-1') { stats.att += 2; stats.def += 4; }
         };
         applyFormationBuffs(home);
         applyFormationBuffs(away);
@@ -340,20 +347,24 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
         home.def += 2;
 
         // 4. DECISION MATRIX: COUNTER FORMASI (AI INTELLIGENCE)
-        // Logika evaluasi taktik saling mengalahkan (Rock-Paper-Scissors Style)
         const checkCounter = (f1, f2) => {
-            if (f1 === '4-3-3' && f2 === '5-3-2') return true;  // Sayap cepat membongkar bek menumpuk
-            if (f1 === '5-3-2' && f2 === '4-4-2') return true;  // Pertahanan rapat meredam duet striker klasik
-            if (f1 === '4-4-2' && f2 === '4-2-3-1') return true; // Keunggulan lebar lapangan melelahkan taktik sempit
-            if (f1 === '4-2-3-1' && f2 === '3-5-2') return true; // Overload lini tengah memutus serangan balik 3 bek
-            if (f1 === '3-5-2' && f2 === '4-3-3') return true;  // Penguasaan bola tengah mematikan aliran bola ke sayap
+            const attacking = ['4-3-3', '4-2-4', '3-4-3'];
+            const defensive = ['5-3-2', '5-4-1', '4-5-1'];
+            const control = ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'];
+            
+            // Attacking membongkar Defensive
+            if (attacking.includes(f1) && defensive.includes(f2)) return true;
+            // Defensive menghancurkan Control (Serangan Balik)
+            if (defensive.includes(f1) && control.includes(f2)) return true;
+            // Control mematikan Attacking (Memutus aliran bola)
+            if (control.includes(f1) && attacking.includes(f2)) return true;
             return false;
         };
 
         if (checkCounter(home.formation, away.formation)) {
-            home.ovr += 4; home.att += 3; // Home berhasil counter taktik Away
+            home.ovr += 5; home.att += 4; // Home Counter Taktik Away!
         } else if (checkCounter(away.formation, home.formation)) {
-            away.ovr += 4; away.att += 3; // Away berhasil counter taktik Home
+            away.ovr += 5; away.att += 4; // Away Counter Taktik Home!
         }
 
         // Ambil data lineup pemain untuk match events
@@ -494,6 +505,55 @@ app.put('/api/clubs/:id', async (req, res) => {
             [logo_url, formation, req.params.id]
         );
         res.json({ message: 'Profil Klub Berhasil Diperbarui!' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// 3. AI Manager: Analisis Otomatis Formasi Terbaik
+app.put('/api/clubs/:id/auto-formation', async (req, res) => {
+    try {
+        const clubId = req.params.id;
+        const playersRes = await pool.query('SELECT position, overall_rating FROM players WHERE club_id = $1', [clubId]);
+        
+        let defScore = 0, midScore = 0, fwdScore = 0;
+        let defCount = 0, midCount = 0, fwdCount = 0;
+
+        playersRes.rows.forEach(p => {
+            const pos = p.position || 'CM';
+            if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'DEF'].includes(pos)) {
+                defScore += p.overall_rating; defCount++;
+            } else if (['CM', 'CDM', 'CAM', 'RM', 'LM', 'DM', 'AM', 'MID'].includes(pos)) {
+                midScore += p.overall_rating; midCount++;
+            } else if (['ST', 'CF', 'LW', 'RW', 'FWD'].includes(pos)) {
+                fwdScore += p.overall_rating; fwdCount++;
+            }
+        });
+
+        const avgDef = defCount > 0 ? defScore / defCount : 0;
+        const avgMid = midCount > 0 ? midScore / midCount : 0;
+        const avgFwd = fwdCount > 0 ? fwdScore / fwdCount : 0;
+
+        let chosenFormation = '4-4-2';
+        let analysis = '';
+
+        if (avgFwd > avgDef && avgFwd > avgMid) {
+            const forms = ['4-3-3', '4-2-4', '3-4-3'];
+            chosenFormation = forms[Math.floor(Math.random() * forms.length)];
+            analysis = 'Lini serang skuad sangat mematikan! AI menetapkan taktik Ofensif Total.';
+        } else if (avgDef > avgMid && avgDef > avgFwd) {
+            const forms = ['5-3-2', '5-4-1', '4-5-1'];
+            chosenFormation = forms[Math.floor(Math.random() * forms.length)];
+            analysis = 'Lini belakang bagai tembok! AI menetapkan taktik Parkir Bus & Serangan Balik.';
+        } else {
+            const forms = ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'];
+            chosenFormation = forms[Math.floor(Math.random() * forms.length)];
+            analysis = 'Lini tengah sangat dominan! AI menetapkan taktik Penguasaan Bola (Tiki-Taka).';
+        }
+
+        await pool.query('UPDATE clubs SET formation = $1 WHERE id = $2', [chosenFormation, clubId]);
+        res.json({ formation: chosenFormation, message: analysis });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
