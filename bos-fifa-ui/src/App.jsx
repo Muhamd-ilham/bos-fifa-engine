@@ -121,6 +121,50 @@ function App() {
   const [clubInfo, setClubInfo] = useState({ name: '', logo_url: '', formation: '4-3-3' });
   const [clubTab, setClubTab] = useState('squad'); // squad | calendar | strategy
 
+  // State untuk Modal Tambah/Edit Pemain
+  const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
+  const [playerForm, setPlayerForm] = useState({ id: null, name: '', position: 'CM', overall_rating: 70 });
+
+  const openAddPlayerModal = () => {
+    setPlayerForm({ id: null, name: '', position: 'CM', overall_rating: 70 });
+    setIsPlayerModalOpen(true);
+  };
+
+  const openEditPlayerModal = (player) => {
+    setPlayerForm({ id: player.id, name: player.name, position: player.position, overall_rating: player.overall_rating });
+    setIsPlayerModalOpen(true);
+  };
+
+  const savePlayer = async () => {
+    if (!playerForm.name) return alert('Nama pemain tidak boleh kosong!');
+    
+    if (playerForm.id) {
+      // MODE EDIT
+      await fetch(`${API_BASE}/api/players/${playerForm.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(playerForm)
+      });
+    } else {
+      // MODE TAMBAH BARU
+      await fetch(`${API_BASE}/api/players`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...playerForm, club_id: selectedClubId })
+      });
+    }
+    
+    setIsPlayerModalOpen(false);
+    fetchData(selectedLeague); // Refresh data dari DB
+  };
+
+  const deletePlayer = async (id, name) => {
+    if (window.confirm(`Yakin ingin memecat ${name} dari klub ini?`)) {
+      await fetch(`${API_BASE}/api/players/${id}`, { method: 'DELETE' });
+      fetchData(selectedLeague); // Refresh data dari DB
+    }
+  };
+
   useEffect(() => {
     fetch(`${API_BASE}/api/leagues`)
       .then(res => res.json())
@@ -457,17 +501,35 @@ function App() {
         </div>
 
         {/* ISI TAB: SQUAD */}
+        {/* ISI TAB: SQUAD */}
         {clubTab === 'squad' && (
           <div className="card">
-            <div className="table-responsive">
+            <div className="card-h" style={{ borderBottom: 'none', paddingBottom: '0' }}>
+               <span style={{ fontSize: '14px', color: '#9CB0A4' }}>Total: {clubPlayers.length} Pemain</span>
+               <button className="btn-simulate" style={{ background: '#E5C26A', color: '#07110C', border: 'none' }} onClick={openAddPlayerModal}>
+                  + Tambah Pemain
+               </button>
+            </div>
+            <div className="table-responsive" style={{ padding: '12px' }}>
               <table className="player-table">
-                <thead><tr><th>Nama Pemain</th><th>Posisi</th><th style={{ textAlign: 'center' }}>OVR</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Nama Pemain</th>
+                    <th>Posisi</th>
+                    <th style={{ textAlign: 'center' }}>OVR</th>
+                    <th style={{ textAlign: 'center' }}>Aksi</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {clubPlayers.map((p, idx) => (
                     <tr key={idx}>
-                      <td className="club-name-col">{p.name}</td>
+                      <td className="club-name-col" style={{ fontWeight: 'bold', color: '#ECEFE8' }}>{p.name}</td>
                       <td><span className="badge">{p.position}</span></td>
-                      <td className="pts" style={{ color: '#E5C26A' }}>{p.overall_rating}</td>
+                      <td className="pts" style={{ color: '#E5C26A', fontSize: '15px' }}>{p.overall_rating}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button className="btn-action-edit" onClick={() => openEditPlayerModal(p)}>✎</button>
+                        <button className="btn-action-delete" onClick={() => deletePlayer(p.id, p.name)}>🗑</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -574,6 +636,54 @@ function App() {
           {activePage === 'clubProfile' && renderClubProfile()}
         </main>
       </div>
+
+      {/* MODAL TAMBAH/EDIT PEMAIN */}
+      {isPlayerModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <h3 style={{ color: '#E5C26A', marginBottom: '20px' }}>
+              {playerForm.id ? 'Edit Data Pemain' : 'Rekrut Pemain Baru'}
+            </h3>
+            
+            <div className="form-group">
+              <label>Nama Lengkap</label>
+              <input type="text" value={playerForm.name} onChange={(e) => setPlayerForm({...playerForm, name: e.target.value})} placeholder="Misal: L. Messi" />
+            </div>
+            
+            <div className="form-group">
+              <label>Posisi</label>
+              <select value={playerForm.position} onChange={(e) => setPlayerForm({...playerForm, position: e.target.value})}>
+                <option value="GK">Goal Keeper (GK)</option>
+                <option value="CB">Center Back (CB)</option>
+                <option value="LB">Left Back (LB)</option>
+                <option value="RB">Right Back (RB)</option>
+                <option value="DM">Defensive Mid (DM)</option>
+                <option value="CM">Center Mid (CM)</option>
+                <option value="AM">Attacking Mid (AM)</option>
+                <option value="LW">Left Winger (LW)</option>
+                <option value="RW">Right Winger (RW)</option>
+                <option value="ST">Striker (ST)</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Overall Rating (OVR)</label>
+              <input type="number" min="40" max="99" value={playerForm.overall_rating} onChange={(e) => setPlayerForm({...playerForm, overall_rating: e.target.value})} />
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setIsPlayerModalOpen(false)}>Batal</button>
+              <button className="btn-save" onClick={savePlayer}>Simpan Data</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+export default App;
     </div>
   );
 }
