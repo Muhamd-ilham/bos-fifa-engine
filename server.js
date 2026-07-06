@@ -3,54 +3,107 @@ const cors = require('cors');
 const pool = require('./db');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+}));
 app.use(express.json());
 
 app.get('/', (req, res) => {
     res.send('Bos FIFA Engine API is running dengan PostgreSQL!');
 });
 
+// ==========================================
+// 1. FUNGSI PEMBANTU (HELPERS) MESIN AI
+// ==========================================
 function poissonRandom(lambda) {
     const L = Math.exp(-lambda);
-    let k = 0;
-    let p = 1;
-    do {
-        k++;
-        p *= Math.random();
-    } while (p > L);
+    let k = 0; let p = 1;
+    do { k++; p *= Math.random(); } while (p > L);
     return k - 1;
 }
 
-// Pilih satu pemain dari lineup berdasarkan bobot posisi (dipakai untuk gol/assist/kartu).
-// weights: object positionGroup -> bobot relatif. Makin besar bobot, makin sering terpilih.
+const GOAL_WEIGHTS = { FWD: 6, MID: 3, DEF: 1, GK: 0.05 };
+const ASSIST_WEIGHTS = { MID: 5, DEF: 2, FWD: 2, GK: 0.02 };
+const CARD_WEIGHTS = { DEF: 4, MID: 3, FWD: 1.5, GK: 0.3 };
+
 function pickWeightedPlayer(lineup, weights) {
     if (!lineup || lineup.length === 0) return null;
-    const pool = lineup.map((p) => ({ player: p, weight: weights[p.positionGroup] ?? 1 }));
-    const totalWeight = pool.reduce((sum, x) => sum + x.weight, 0);
+    const poolData = lineup.map((p) => ({ player: p, weight: weights[p.positionGroup] ?? 1 }));
+    const totalWeight = poolData.reduce((sum, x) => sum + x.weight, 0);
     if (totalWeight <= 0) return lineup[Math.floor(Math.random() * lineup.length)];
 
     let roll = Math.random() * totalWeight;
-    for (const x of pool) {
+    for (const x of poolData) {
         roll -= x.weight;
         if (roll <= 0) return x.player;
     }
-    return pool[pool.length - 1].player;
+    return poolData[poolData.length - 1].player;
 }
 
-// Bobot kemungkinan mencetak gol per posisi (FWD paling sering, GK nyaris tak pernah)
-const GOAL_WEIGHTS = { FWD: 6, MID: 3, DEF: 1, GK: 0.05 };
-// Bobot assist: MID paling sering assist, lalu DEF (crossing), FWD (assist antar-striker), GK jarang
-const ASSIST_WEIGHTS = { MID: 5, DEF: 2, FWD: 2, GK: 0.02 };
-// Bobot kartu: DEF & MID lebih rawan kena kartu (tekel keras), FWD & GK lebih jarang
-const CARD_WEIGHTS = { DEF: 4, MID: 3, FWD: 1.5, GK: 0.3 };
+function generateGoalMinutes(count) {
+    const minutes = new Set();
+    while (minutes.size < count) {
+        minutes.add(1 + Math.floor(Math.random() * 95));
+    }
+    return Array.from(minutes);
+}
 
-// Simulasi per-menit: generate timeline kejadian pertandingan (90 menit + extra time),
-// SEKARANG setiap GOAL/KARTU_KUNING/KARTU_MERAH juga membawa nama & id pemain spesifik
-// (diambil dari starting XI tim terkait), supaya bisa: (1) disebut di commentary, dan
-// (2) diakumulasikan ke stat permanen pemain (goals/assists/cards) setelah match selesai.
-// === MESIN KECERDASAN PELATIH AI ===
+function normalizePositionGroup(rawPosition) {
+    if (!rawPosition) return 'MID';
+    const pos = rawPosition.toUpperCase();
+    if (pos.includes('GK')) return 'GK';
+    if (pos.includes('CB') || pos.includes('LB') || pos.includes('RB') || pos.includes('WB') || pos.includes('DEF')) return 'DEF';
+    if (pos.includes('ST') || pos.includes('CF') || pos.includes('LW') || pos.includes('RW') || pos.includes('FWD')) return 'FWD';
+    return 'MID';
+}
+
+async function getStartingLineup(clubId) {
+    const query = `
+        SELECT id, name, position, overall_rating
+        FROM players
+        WHERE club_id = $1
+        ORDER BY overall_rating DESC
+        LIMIT 11
+    `;
+    const result = await pool.query(query, [clubId]);
+    const groupOrder = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+
+    return result.rows
+        .map(p => ({
+            id: p.id,
+            name: p.name,
+            position: p.position,
+            positionGroup: normalizePositionGroup(p.position),
+            overall_rating: p.overall_rating
+        }))
+        .sort((a, b) => groupOrder[a.positionGroup] - groupOrder[b.positionGroup]);
+}
+
+async function persistPlayerStats(playerStats, homeLineup, awayLineup) {
+    if (!playerStats || playerStats.length === 0) return;
+    const idByName = new Map();
+    [...homeLineup, ...awayLineup].forEach((p) => idByName.set(p.name, p.id));
+
+    for (const stat of playerStats) {
+        const playerId = idByName.get(stat.name);
+        if (!playerId) continue;
+        await pool.query(
+            `UPDATE players
+             SET goals = goals + $1, assists = assists + $2, yellow_cards = yellow_cards + $3, red_cards = red_cards + $4
+             WHERE id = $5`,
+            [stat.goals, stat.assists, stat.yellow_cards, stat.red_cards, playerId]
+        );
+    }
+}
+
+
+// ==========================================
+// 2. OTAK MANAJER AI (KECERDASAN BUATAN)
+// ==========================================
 function autoPickFormation(lineup) {
-    if (!lineup || lineup.length === 0) return '4-4-2'; // Default
+    if (!lineup || lineup.length === 0) return '4-4-2';
     let defScore = 0, midScore = 0, fwdScore = 0;
     lineup.forEach(p => {
         if (p.positionGroup === 'DEF') defScore += p.overall_rating;
@@ -58,7 +111,6 @@ function autoPickFormation(lineup) {
         else if (p.positionGroup === 'FWD') fwdScore += p.overall_rating;
     });
     
-    // Logika pemilihan formasi berdasarkan kekuatan OVR Starting XI
     if (fwdScore > defScore && fwdScore > midScore) return ['4-3-3', '4-2-4', '3-4-3'][Math.floor(Math.random()*3)];
     if (defScore > midScore && defScore > fwdScore) return ['5-3-2', '5-4-1', '4-5-1'][Math.floor(Math.random()*3)];
     return ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'][Math.floor(Math.random()*4)];
@@ -140,14 +192,12 @@ function simulateFullMatch(home, away, homeLineup, awayLineup) {
             if (cardType) events.push({ minute, type: cardType, team: cardTeam, playerName });
         }
 
-        // 🔥 KECERDASAN PELATIH AI DI TENGAH LAGA (Real-Time Tactics) 🔥
+        // 🔥 KECERDASAN PELATIH AI DI TENGAH LAGA 🔥
         if (minute === 45) {
-            // Half-time team talk: Jika tertinggal, ubah ke mode Ultra Menyerang!
             if (homeScore < awayScore) events.push({ minute: 45, type: 'TACTIC_CHANGE', team: 'HOME', newFormation: '3-4-3' });
             if (awayScore < homeScore) events.push({ minute: 45, type: 'TACTIC_CHANGE', team: 'AWAY', newFormation: '3-4-3' });
         }
         if (minute === 75) {
-            // Menit 75: Jika unggul, pelatih AI parkir bus untuk mengamankan kemenangan!
             if (homeScore > awayScore) events.push({ minute: 75, type: 'TACTIC_CHANGE', team: 'HOME', newFormation: '5-4-1' });
             if (awayScore > homeScore) events.push({ minute: 75, type: 'TACTIC_CHANGE', team: 'AWAY', newFormation: '5-4-1' });
         }
@@ -160,6 +210,10 @@ function simulateFullMatch(home, away, homeLineup, awayLineup) {
     return { finalHomeScore: homeScore, finalAwayScore: awayScore, timeline: events, playerStats: Array.from(statsThisMatch.values()), lambdas: { home: homeLambda.toFixed(2), away: awayLambda.toFixed(2) } };
 }
 
+
+// ==========================================
+// 3. API ROUTES (ENDPOINT)
+// ==========================================
 app.post('/api/matches/simulate/:id', async (req, res) => {
     try {
         const matchId = req.params.id;
@@ -177,7 +231,6 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             getStartingLineup(match.away_team_id)
         ]);
 
-        // 🔥 BIARKAN AI MENENTUKAN FORMASI AWAL SEBELUM KICK-OFF
         const startFormationHome = autoPickFormation(homeLineup);
         const startFormationAway = autoPickFormation(awayLineup);
 
@@ -199,7 +252,6 @@ app.post('/api/matches/simulate/:id', async (req, res) => {
             if (row.club_id === match.away_team_id) { away.ovr = parseFloat(row.team_ovr); away.att = parseFloat(row.team_attack); away.def = parseFloat(row.team_defense); }
         });
 
-        // Terapkan Bonus Taktik
         const applyFormationBuffs = (stats) => {
             const f = stats.formation;
             if (['4-3-3', '4-2-4', '3-4-3'].includes(f)) { stats.att += 4; stats.def -= 2; }
@@ -254,10 +306,7 @@ app.get('/api/leagues', async (req, res) => {
         `;
         const result = await pool.query(query);
         res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
+    } catch (err) { res.status(500).send('Server Error'); }
 });
 
 app.get('/api/players/:leagueId', async (req, res) => {
@@ -275,132 +324,10 @@ app.get('/api/players/:leagueId', async (req, res) => {
     } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// === ENDPOINT MANAJEMEN PEMAIN (CRUD) ===
-
-// 1. Tambah Pemain Baru
-app.post('/api/players', async (req, res) => {
-    try {
-        const { name, position, overall_rating, club_id } = req.body;
-        // Default gol/assist/kartu diset 0 untuk pemain baru
-        await pool.query(
-            'INSERT INTO players (name, position, overall_rating, club_id, goals, assists, yellow_cards, red_cards) VALUES ($1, $2, $3, $4, 0, 0, 0, 0)',
-            [name, position, overall_rating, club_id]
-        );
-        res.json({ message: 'Pemain berhasil ditambahkan!' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
-// 2. Edit/Update Pemain
-app.put('/api/players/:id', async (req, res) => {
-    try {
-        const { name, position, overall_rating } = req.body;
-        await pool.query(
-            'UPDATE players SET name = $1, position = $2, overall_rating = $3 WHERE id = $4',
-            [name, position, overall_rating, req.params.id]
-        );
-        res.json({ message: 'Data pemain berhasil diupdate!' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
-// 3. Pecat/Hapus Pemain
-app.delete('/api/players/:id', async (req, res) => {
-    try {
-        await pool.query('DELETE FROM players WHERE id = $1', [req.params.id]);
-        res.json({ message: 'Pemain berhasil dihapus!' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
-app.get('/api/clubs/:id', async (req, res) => {
-    try {
-        // Otomatis bikin kolom kalau belum ada di DB (Jalur Ninja)
-        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_url TEXT DEFAULT ''`);
-        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS formation VARCHAR(50) DEFAULT '4-3-3'`);
-        
-        const result = await pool.query('SELECT * FROM clubs WHERE id = $1', [req.params.id]);
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
-// 2. Update Logo & Formasi Klub
-app.put('/api/clubs/:id', async (req, res) => {
-    try {
-        const { logo_url, formation } = req.body;
-        await pool.query(
-            'UPDATE clubs SET logo_url = $1, formation = $2 WHERE id = $3',
-            [logo_url, formation, req.params.id]
-        );
-        res.json({ message: 'Profil Klub Berhasil Diperbarui!' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
-// 3. AI Manager: Analisis Otomatis Formasi Terbaik
-app.put('/api/clubs/:id/auto-formation', async (req, res) => {
-    try {
-        const clubId = req.params.id;
-        const playersRes = await pool.query('SELECT position, overall_rating FROM players WHERE club_id = $1', [clubId]);
-        
-        let defScore = 0, midScore = 0, fwdScore = 0;
-        let defCount = 0, midCount = 0, fwdCount = 0;
-
-        playersRes.rows.forEach(p => {
-            const pos = p.position || 'CM';
-            if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'DEF'].includes(pos)) {
-                defScore += p.overall_rating; defCount++;
-            } else if (['CM', 'CDM', 'CAM', 'RM', 'LM', 'DM', 'AM', 'MID'].includes(pos)) {
-                midScore += p.overall_rating; midCount++;
-            } else if (['ST', 'CF', 'LW', 'RW', 'FWD'].includes(pos)) {
-                fwdScore += p.overall_rating; fwdCount++;
-            }
-        });
-
-        const avgDef = defCount > 0 ? defScore / defCount : 0;
-        const avgMid = midCount > 0 ? midScore / midCount : 0;
-        const avgFwd = fwdCount > 0 ? fwdScore / fwdCount : 0;
-
-        let chosenFormation = '4-4-2';
-        let analysis = '';
-
-        if (avgFwd > avgDef && avgFwd > avgMid) {
-            const forms = ['4-3-3', '4-2-4', '3-4-3'];
-            chosenFormation = forms[Math.floor(Math.random() * forms.length)];
-            analysis = 'Lini serang skuad sangat mematikan! AI menetapkan taktik Ofensif Total.';
-        } else if (avgDef > avgMid && avgDef > avgFwd) {
-            const forms = ['5-3-2', '5-4-1', '4-5-1'];
-            chosenFormation = forms[Math.floor(Math.random() * forms.length)];
-            analysis = 'Lini belakang bagai tembok! AI menetapkan taktik Parkir Bus & Serangan Balik.';
-        } else {
-            const forms = ['4-2-3-1', '3-5-2', '4-1-4-1', '4-4-2'];
-            chosenFormation = forms[Math.floor(Math.random() * forms.length)];
-            analysis = 'Lini tengah sangat dominan! AI menetapkan taktik Penguasaan Bola (Tiki-Taka).';
-        }
-
-        await pool.query('UPDATE clubs SET formation = $1 WHERE id = $2', [chosenFormation, clubId]);
-        res.json({ formation: chosenFormation, message: analysis });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
- 
 app.get('/api/standings/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
-       const query = `
+        const query = `
             SELECT * FROM (
                 SELECT
                     c.id AS club_id,
@@ -423,17 +350,8 @@ app.get('/api/standings/:leagueId', async (req, res) => {
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
+    } catch (err) { res.status(500).send('Server Error'); }
 });
-
-// === ENDPOINT STATISTIK PEMAIN (Top Scorer / Top Assist / Kartu) ===
-// Semua diambil dari kolom permanen di tabel players (goals, assists, yellow_cards,
-// red_cards) yang terus terakumulasi tiap kali match disimulasikan sampai FINISHED.
-// Difilter per liga lewat join ke clubs, dan hanya pemain dengan stat > 0 yang muncul
-// (biar tidak kebanjiran baris pemain yang belum pernah main sama sekali).
 
 app.get('/api/stats/topscorers/:leagueId', async (req, res) => {
     try {
@@ -448,10 +366,7 @@ app.get('/api/stats/topscorers/:leagueId', async (req, res) => {
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
+    } catch (err) { res.status(500).send('Server Error'); }
 });
 
 app.get('/api/stats/topassists/:leagueId', async (req, res) => {
@@ -467,10 +382,7 @@ app.get('/api/stats/topassists/:leagueId', async (req, res) => {
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
+    } catch (err) { res.status(500).send('Server Error'); }
 });
 
 app.get('/api/stats/cards/:leagueId', async (req, res) => {
@@ -486,13 +398,9 @@ app.get('/api/stats/cards/:leagueId', async (req, res) => {
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
+    } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// 1. Endpoint: Tarik Jadwal Pertandingan (Tampilkan Semua dengan Pekan)
 app.get('/api/matches/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
@@ -511,62 +419,39 @@ app.get('/api/matches/:leagueId', async (req, res) => {
         res.json(result.rows);
     } catch (err) { res.status(500).send('Server Error'); }
 });
-// 2. Endpoint: Mesin Pembuat Jadwal Home-Away Sempurna
+
 app.post('/api/schedule/generate/:leagueId', async (req, res) => {
     try {
         const { leagueId } = req.params;
-        
-        // Amankan database: Tambah kolom matchday kalau belum ada
         await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS matchday INT`);
-
         const clubsRes = await pool.query('SELECT id FROM clubs WHERE league_id = $1', [leagueId]);
         let clubs = clubsRes.rows.map(c => c.id);
 
         if (clubs.length < 2) return res.status(400).json({ message: "Klub kurang dari 2!" });
-        
-        // Kalau ganjil (walaupun sistem kita udah genap), tambahkan tim bayangan (null)
         if (clubs.length % 2 !== 0) clubs.push(null);
 
         const totalRounds = clubs.length - 1;
         const matchesPerRound = clubs.length / 2;
         let fullSchedule = [];
 
-        // Algoritma Round-Robin Sempurna
         for (let round = 0; round < totalRounds; round++) {
             for (let match = 0; match < matchesPerRound; match++) {
                 const home = clubs[match];
                 const away = clubs[clubs.length - 1 - match];
-                
                 if (home !== null && away !== null) {
-                    // Masukkan Putaran Pertama (Kandang)
                     fullSchedule.push({ home, away, matchday: round + 1 });
-                    
-                    // Masukkan Putaran Kedua (Tandang), Pekan = Putaran 1 + Total Rounds
                     fullSchedule.push({ home: away, away: home, matchday: round + 1 + totalRounds });
                 }
             }
-            // Rotasi klub (Kecuali elemen pertama)
             clubs.splice(1, 0, clubs.pop());
         }
 
-        // Hapus jadwal lama untuk liga ini saja
         await pool.query(`DELETE FROM matches WHERE home_team_id IN (SELECT id FROM clubs WHERE league_id = $1)`, [leagueId]);
-
-        // Suntikkan 380/306 laga Home-Away ke Database
         for (let m of fullSchedule) {
-            await pool.query(
-                "INSERT INTO matches (home_team_id, away_team_id, status, matchday) VALUES ($1, $2, 'SCHEDULED', $3)",
-                [m.home, m.away, m.matchday]
-            );
+            await pool.query("INSERT INTO matches (home_team_id, away_team_id, status, matchday) VALUES ($1, $2, 'SCHEDULED', $3)", [m.home, m.away, m.matchday]);
         }
 
-        // Reset stat pemain (goals/assists/kartu) untuk liga ini juga, supaya musim baru
-        // dimulai dari 0, konsisten dengan jadwal & klasemen yang ikut di-reset.
-        await pool.query(
-            `UPDATE players SET goals = 0, assists = 0, yellow_cards = 0, red_cards = 0
-             WHERE club_id IN (SELECT id FROM clubs WHERE league_id = $1)`,
-            [leagueId]
-        );
+        await pool.query(`UPDATE players SET goals = 0, assists = 0, yellow_cards = 0, red_cards = 0 WHERE club_id IN (SELECT id FROM clubs WHERE league_id = $1)`, [leagueId]);
 
         const totalMatchdays = totalRounds * 2;
         res.json({ message: `Sukses! Jadwal Kandang-Tandang (${totalMatchdays} Pekan) berhasil di-generate.` });
@@ -576,7 +461,52 @@ app.post('/api/schedule/generate/:leagueId', async (req, res) => {
     }
 });
 
-// 🔥 MENGGUNAKAN PORT OTOMATIS DARI CLOUD & BINDING KE '0.0.0.0'
+app.get('/api/clubs/:id', async (req, res) => {
+    try {
+        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_url TEXT DEFAULT ''`);
+        await pool.query(`ALTER TABLE clubs ADD COLUMN IF NOT EXISTS formation VARCHAR(50) DEFAULT '4-3-3'`);
+        const result = await pool.query('SELECT * FROM clubs WHERE id = $1', [req.params.id]);
+        res.json(result.rows[0]);
+    } catch (err) { res.status(500).send('Server Error'); }
+});
+
+app.put('/api/clubs/:id', async (req, res) => {
+    try {
+        const { logo_url, formation } = req.body;
+        await pool.query('UPDATE clubs SET logo_url = $1, formation = $2 WHERE id = $3', [logo_url, formation, req.params.id]);
+        res.json({ message: 'Profil Klub Berhasil Diperbarui!' });
+    } catch (err) { res.status(500).send('Server Error'); }
+});
+
+app.post('/api/players', async (req, res) => {
+    try {
+        const { name, position, overall_rating, club_id } = req.body;
+        await pool.query(
+            'INSERT INTO players (name, position, overall_rating, club_id, goals, assists, yellow_cards, red_cards) VALUES ($1, $2, $3, $4, 0, 0, 0, 0)',
+            [name, position, overall_rating, club_id]
+        );
+        res.json({ message: 'Pemain berhasil ditambahkan!' });
+    } catch (err) { res.status(500).send('Server Error'); }
+});
+
+app.put('/api/players/:id', async (req, res) => {
+    try {
+        const { name, position, overall_rating } = req.body;
+        await pool.query(
+            'UPDATE players SET name = $1, position = $2, overall_rating = $3 WHERE id = $4',
+            [name, position, overall_rating, req.params.id]
+        );
+        res.json({ message: 'Data pemain berhasil diupdate!' });
+    } catch (err) { res.status(500).send('Server Error'); }
+});
+
+app.delete('/api/players/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM players WHERE id = $1', [req.params.id]);
+        res.json({ message: 'Pemain berhasil dihapus!' });
+    } catch (err) { res.status(500).send('Server Error'); }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🔥 Server Bos FIFA ENGINE sudah LIVE di port ${PORT}`);
