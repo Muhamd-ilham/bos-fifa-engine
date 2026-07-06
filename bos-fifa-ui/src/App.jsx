@@ -271,10 +271,17 @@ function App() {
                     <tr key={team.club_id} className={`${index < 4 ? 'top-tier' : ''} ${isLive ? 'row-live-active' : ''}`}>
                       <td style={{ textAlign: 'center' }}><IconRankArrow delta={delta} /></td>
                       <td className="pos" style={{ color: index === 0 ? '#E5C26A' : 'inherit' }}>{index + 1}</td>
-                      <td className="club-name-col clickable" onClick={() => openClubProfile(team.club_id, team.club)}>
-                        {team.club}
-                        {isLive && <span className="live-dot" title="Sedang bertanding">●</span>}
-                      </td>
+                     <td className="club-name-col clickable" onClick={() => openClubProfile(team.club_id, team.club)}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    {team.logo_url ? (
+      <img src={team.logo_url} alt="logo" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
+    ) : (
+      <span style={{ width: '20px' }}></span> /* Spasi kosong kalau belum ada logo */
+    )}
+    {team.club}
+    {isLive && <span className="live-dot" title="Sedang bertanding">●</span>}
+  </div>
+</td>
                       <td>{team.played}</td><td>{team.won}</td><td>{team.drawn}</td><td>{team.lost}</td>
                       <td style={{ textAlign: 'center', color: '#34D399' }}>{team.goals_for}</td>
                       <td style={{ textAlign: 'center', color: '#F87171' }}>{team.goals_against}</td>
@@ -308,9 +315,17 @@ function App() {
               return (
                 <div key={match.id} className="match-card-sidebar">
                   <div className="match-teams-sidebar">
-                    <span className="home-team clickable" onClick={() => openClubProfile(match.home_team_id, match.home_team)}>{match.home_team}</span>
-                    {match.status === 'FINISHED' ? <span className="score-mini">{match.home_score} - {match.away_score}</span> : <span className="vs-mini">VS</span>}
-                    <span className="away-team clickable" onClick={() => openClubProfile(match.away_team_id, match.away_team)}>{match.away_team}</span>
+                   <span className="home-team clickable" onClick={() => openClubProfile(match.home_team_id, match.home_team)} style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'flex-end' }}>
+  {match.home_team}
+  {match.home_logo && <img src={match.home_logo} alt="logo" style={{ width: '16px', height: '16px', objectFit: 'contain' }} />}
+</span>
+
+{match.status === 'FINISHED' ? <span className="score-mini">{match.home_score} - {match.away_score}</span> : <span className="vs-mini">VS</span>}
+
+<span className="away-team clickable" onClick={() => openClubProfile(match.away_team_id, match.away_team)} style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'flex-start' }}>
+  {match.away_logo && <img src={match.away_logo} alt="logo" style={{ width: '16px', height: '16px', objectFit: 'contain' }} />}
+  {match.away_team}
+</span>
                   </div>
                   {match.status === 'SCHEDULED' ? (
                     <button className="btn-simulate-sidebar" onClick={() => handlePlayMatch(match.id)} disabled={isActive}>{isActive ? 'Playing...' : 'Play'}</button>
