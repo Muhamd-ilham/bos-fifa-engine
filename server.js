@@ -360,7 +360,10 @@ app.get('/api/players/:leagueId', async (req, res) => {
         `;
         const result = await pool.query(query, [leagueId]);
         res.json(result.rows);
-    } catch (err) { res.status(500).send('Server Error'); }
+    } catch (err) { 
+        console.error(err.message);
+        res.status(500).send('Server Error'); 
+    }
 });
 
 app.get('/api/standings/:leagueId', async (req, res) => {
