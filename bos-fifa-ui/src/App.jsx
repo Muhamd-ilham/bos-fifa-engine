@@ -539,8 +539,7 @@ function App() {
           <button className={`club-tab-btn ${clubTab === 'strategy' ? 'active' : ''}`} onClick={() => setClubTab('strategy')}>Taktik & Formasi</button>
         </div>
 
-        {/* ISI TAB: SQUAD */}
-        {/* ISI TAB: SQUAD */}
+       {/* ISI TAB: SQUAD */}
         {clubTab === 'squad' && (
           <div className="card">
             <div className="card-h" style={{ borderBottom: 'none', paddingBottom: '0' }}>
@@ -551,11 +550,10 @@ function App() {
             </div>
             <div className="table-responsive" style={{ padding: '12px' }}>
               <table className="player-table">
-              {/* Bagian Table Header */}
                 <thead>
                   <tr>
-                    <th>Nama Pemain</th>
-                    <th>Posisi</th>
+                    <th style={{ textAlign: 'left' }}>Nama Pemain</th>
+                    <th style={{ textAlign: 'left' }}>Posisi</th>
                     <th style={{ textAlign: 'center' }}>SHT</th>
                     <th style={{ textAlign: 'center' }}>PAS</th>
                     <th style={{ textAlign: 'center' }}>DEF</th>
@@ -563,8 +561,6 @@ function App() {
                     <th style={{ textAlign: 'center' }}>Aksi</th>
                   </tr>
                 </thead>
-                
-              {/* Bagian Table Body */}
                 <tbody>
                   {clubPlayers.map((p, idx) => (
                     <tr key={idx}>
