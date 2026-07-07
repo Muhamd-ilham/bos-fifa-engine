@@ -406,15 +406,35 @@ function App() {
 
   const renderPlayers = () => (
     <div className="card">
-      <div className="card-h"><span className="g-name"><IconPlayers /> Data Pemain Liga</span></div>
+      <div className="card-h">
+        {/* Tambahkan tulisan Top 50 agar jelas bahwa ini ranking 50 terbaik di liga */}
+        <span className="g-name"><IconPlayers /> Top 50 Pemain Liga Terbaik</span>
+      </div>
       <div className="table-responsive" style={{ padding: '0 12px 12px' }}>
         <table className="player-table">
-          <thead><tr><th>Nama Pemain</th><th>Posisi</th><th style={{ textAlign: 'center' }}>OVR</th><th>Klub</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: '30px' }}>#</th>
+              <th>Nama Pemain</th>
+              <th>Posisi</th>
+              <th style={{ textAlign: 'center' }}>SHT</th>
+              <th style={{ textAlign: 'center' }}>PAS</th>
+              <th style={{ textAlign: 'center' }}>DEF</th>
+              <th style={{ textAlign: 'center' }}>OVR</th>
+              <th>Klub</th>
+            </tr>
+          </thead>
           <tbody>
-            {players.map((p, index) => (
-              <tr key={index}>
-                <td className="club-name-col">{p.name}</td><td><span className="badge">{p.position}</span></td>
-                <td className="pts" style={{ color: '#E5C26A' }}>{p.overall_rating}</td>
+            {/* Pakai .slice(0, 50) supaya web tidak nge-lag memuat ratusan pemain sekaligus */}
+            {players.slice(0, 50).map((p, index) => (
+              <tr key={index} className={index < 3 ? 'top-tier' : ''}>
+                <td className="pos" style={{ color: index === 0 ? '#E5C26A' : 'inherit' }}>{index + 1}</td>
+                <td className="club-name-col">{p.name}</td>
+                <td><span className="badge">{p.position}</span></td>
+                <td style={{ textAlign: 'center', color: '#9CB0A4' }}>{p.shooting || '-'}</td>
+                <td style={{ textAlign: 'center', color: '#9CB0A4' }}>{p.passing || '-'}</td>
+                <td style={{ textAlign: 'center', color: '#9CB0A4' }}>{p.defending || '-'}</td>
+                <td className="pts" style={{ color: '#E5C26A', fontSize: '15px' }}>{p.overall_rating}</td>
                 <td>{p.club}</td>
               </tr>
             ))}
@@ -423,7 +443,6 @@ function App() {
       </div>
     </div>
   );
-
   const renderStats = () => {
     const isEmpty = topScorers.length === 0 && topAssists.length === 0 && cardStats.length === 0;
     return (
